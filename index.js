@@ -66,6 +66,7 @@ function parseUrlParams(urlParams) {
 
 function internal_rest(name, verb, params, context){
 	verb = verb || "GET";
+	params = params || {};
 	context = context || {};
 	context['t'] = get_timezone_data();
 	var call_url = rest_url(name, true, context);
