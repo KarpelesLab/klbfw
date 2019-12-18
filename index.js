@@ -113,8 +113,15 @@ function checkSupport() {
 
 function responseParse(response, resolve, reject) {
     var contentType = response.headers.get("content-type");
-    if(!contentType || contentType.indexOf("application/json") == -1) {
-        reject({message:"Not JSON"});
+    if(!contentType || contentType.indexOf("application/json") == -1) {		
+		response.text().then(
+			function(text)
+			{
+				reject({message:"Not JSON", body : text});
+			},
+			reject
+		).catch(reject)
+		
     	return;
 	}
 
@@ -124,13 +131,12 @@ function responseParse(response, resolve, reject) {
 			if(json.result != "success") reject(json);
 			resolve(json);
 		},
-	reject
+		reject
 	).catch(reject)
 }
 
 function rest(name, verb, params, context) {
     if(!checkSupport()) return;
-
 
     return new Promise(function(resolve, reject) {
     	var restResolved = function(data) {
@@ -154,6 +160,8 @@ function rest(name, verb, params, context) {
 };
 
 function rest_get(name, params) {
+	 if(!checkSupport()) return;
+	
     params = params || {};
     var call_url = FW.rest_url(name, false);responseParse
 
