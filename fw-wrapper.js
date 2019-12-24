@@ -1,0 +1,12 @@
+module.exports.getPrefix = () => FW.prefix;
+module.exports.getLocale = () => FW.Locale;
+module.exports.getUser = () => FW.User;
+module.exports.getUserGroup = () => FW.User_Group;
+module.exports.getCurrency = () => FW.Context.c;
+module.exports.getContext = () => FW.Context;
+module.exports.getToken = () => FW.token;
+module.exports.getUrl = () => FW.URL;
+module.exports.getSiteStatic = () => FW.site_static;
+module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
+module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
+module.exports.supported = () => window.FW !== undefined;
