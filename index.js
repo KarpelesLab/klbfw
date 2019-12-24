@@ -690,3 +690,12 @@ module.exports.upload = (function() {
 
     return upload;
 }());
+
+
+module.exports.getPrefix = () => FW.prefix;
+module.exports.getLocale = () => FW.Locale;
+module.exports.getUser = () => FW.User;
+module.exports.getUserGroup = () => FW.User_Group;
+module.exports.getCurrency = () => FW.Context.c;
+module.exports.getToken = () => FW.token;
+module.exports.getUrl = () => FW.URL;
