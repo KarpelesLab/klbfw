@@ -11,6 +11,7 @@ module.exports.getCurrency =  internalFW.getCurrency;
 module.exports.getToken =  internalFW.getToken;
 module.exports.getUrl = internalFW.getUrl;
 module.exports.getPath = internalFW.getPath;
+module.exports.getUuid = internalFW.getUuid;
 
 module.exports.rest = rest.rest;
 module.exports.rest_get = rest.rest_get;
