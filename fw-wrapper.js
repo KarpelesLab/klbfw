@@ -10,4 +10,4 @@ module.exports.getUrl = () => FW.URL;
 module.exports.getSiteStatic = () => FW.site_static;
 module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
 module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
-module.exports.supported = () => window.FW !== undefined;
+module.exports.supported = () => FW !== undefined;

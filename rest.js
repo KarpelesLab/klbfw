@@ -49,7 +49,7 @@ module.exports.rest_get = (name, params) => {
     }
 
     return new Promise(function(resolve, reject) {
-        window.fetch(call_url, {
+        fetch(call_url, {
             method: 'GET',
             credentials: 'include'
         }).then(restResolved, restRejected).catch(restCatch);

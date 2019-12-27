@@ -73,18 +73,18 @@ function internal_rest(name, verb, params, context){
         params = parseUrlParams(params);
         if (params) call_url += "&" + params;
 
-        return window.fetch(call_url, { method: verb,credentials: 'include'});
+        return fetch(call_url, { method: verb,credentials: 'include'});
     }
 
     if ((FormData != undefined) && (params instanceof FormData)) {
-        return window.fetch(call_url, {
+        return fetch(call_url, {
             method: verb,
             credentials: 'include',
             body : params
         });
     }
 
-    return window.fetch(call_url, {
+    return fetch(call_url, {
         method: verb,
         credentials: 'include',
         body : JSON.stringify(params),
@@ -96,7 +96,7 @@ function internal_rest(name, verb, params, context){
 
 function checkSupport() {
     var ok = true;
-    if(!window.fetch) {
+    if(!fetch) {
         console.error("Fetch unsupported");
         ok= false;
     }

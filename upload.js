@@ -73,7 +73,7 @@ function awsReq(upInfo, method, query, body, headers, context) {
 
                 headers["Authorization"] = ares.data.authorization;
 
-                window.fetch(u, {
+                fetch(u, {
                     method: method,
                     body : body,
                     headers: headers
@@ -130,7 +130,7 @@ module.exports.upload = (function() {
             // ok we are ready to upload - this will initiate an upload
             awsReq(up.info, "POST", "uploads=", "", {"Content-Type": up.file.type,"X-Amz-Acl":"private"}, up.context)
 				.then(response => response.text())
-                .then(str => (new window.DOMParser()).parseFromString(str, "text/xml"))
+                .then(str => (new DOMParser()).parseFromString(str, "text/xml"))
                 .then(dom => dom.querySelector('UploadId').innerHTML)
 				.then(function (uploadId) {
                     up.uploadId = uploadId;
