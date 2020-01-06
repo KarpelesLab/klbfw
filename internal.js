@@ -16,7 +16,8 @@ function get_timezone_data() {
         get_tz_pad(Math.abs(offset%60), 2));
 
     // check if we have intl info
-    if ((Intl != undefined) && (Intl.DateTimeFormat != undefined)) {
+
+    if (typeof Intl != 'undefined' && (Intl.DateTimeFormat != undefined)) {
         return Intl.DateTimeFormat().resolvedOptions().timeZone+";"+offset;
     }
 
