@@ -1,4 +1,4 @@
-'use strict';
+'use strict'
 const internalFW = require('./fw-wrapper');
 
 function getI18N(language) {
