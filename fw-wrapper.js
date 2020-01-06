@@ -11,4 +11,5 @@ module.exports.getSiteStatic = () => FW.site_static;
 module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
 module.exports.getCallUrlPrefix = () => FW.call_url_prefix;
 module.exports.getUuid = () => FW.uuid;
+module.exports.getInitialState = () => FW.initial;
 module.exports.supported = () => FW !== undefined;
