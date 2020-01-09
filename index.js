@@ -4,6 +4,7 @@ const rest = require('./rest');
 const upload = require('./upload');
 const util = require('./util');
 
+module.exports.GET = internalFW.GET;
 module.exports.getPrefix = internalFW.getPrefix;
 module.exports.getLocale = internalFW.getLocale;
 module.exports.getUser = internalFW.getUser;
