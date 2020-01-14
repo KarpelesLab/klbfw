@@ -14,3 +14,4 @@ module.exports.getUuid = () => FW.uuid;
 module.exports.getInitialState = () => FW.initial;
 module.exports.supported = () => FW !== undefined;
 module.exports.GET = FW.GET;
+module.exports.getMode = () => FW.mode;
