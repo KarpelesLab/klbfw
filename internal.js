@@ -1,5 +1,6 @@
 'use strict'
 const fwWrapper = require('./fw-wrapper')
+const queryString = require('query-string')
 
 function get_tz_pad (number, length) {
     var str = "" + number
@@ -53,14 +54,7 @@ function rest_url(path, with_token, context) {
 }
 
 function parseUrlParams(urlParams)  {
-    if(!urlParams) return '';
-    const joinByEquals = (pair) => pair.join('=')
-    const params = Object.entries(urlParams).map(joinByEquals).join('&')
-    if (params) {
-        return `${params}`
-    } else {
-        return ''
-    }
+    return queryString.stringify(urlParams);
 }
 
 function internal_rest(name, verb, params, context){
