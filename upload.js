@@ -23,7 +23,7 @@ function pad(number) {
 
 // perform call against AWS S3 with the appropriate signature obtained from server
 function awsReq(upInfo, method, query, body, headers, context) {
-    headers 		= headers || {};
+    headers = headers || {};
     context = context || {};
 
     if (body == "") {
@@ -42,40 +42,40 @@ function awsReq(upInfo, method, query, body, headers, context) {
     var aws_auth_str = [
         "AWS4-HMAC-SHA256",
         ts,
-        ts_d + "/"+upInfo.Bucket_Endpoint.Region+"/s3/aws4_request",
+        ts_d + "/" + upInfo.Bucket_Endpoint.Region + "/s3/aws4_request",
         method,
-        "/"+upInfo.Bucket_Endpoint.Name+"/"+upInfo.Key,
+        "/" + upInfo.Bucket_Endpoint.Name + "/" + upInfo.Key,
         query,
-        "host:"+upInfo.Bucket_Endpoint.Host,
+        "host:" + upInfo.Bucket_Endpoint.Host,
     ];
 
     // list headers to sign (host and anything starting with x-)
     var sign_head = ['host'];
     var k = Object.keys(headers).sort();
-    for(var i = 0; i < k.length; i++) {
+    for (var i = 0; i < k.length; i++) {
         var s = k[i].toLowerCase();
         if (s.substring(0, 2) != "x-") {
             continue;
         }
         sign_head.push(s);
-        aws_auth_str.push(s+":"+headers[k[i]]);
+        aws_auth_str.push(s + ":" + headers[k[i]]);
     }
     aws_auth_str.push("");
     aws_auth_str.push(sign_head.join(";"));
     aws_auth_str.push(bodyHash);
 
-    var promise = new Promise(function(resolve, reject){
+    var promise = new Promise(function (resolve, reject) {
 
-        rest.rest("Cloud/Aws/Bucket/Upload/"+upInfo.Cloud_Aws_Bucket_Upload__+":signV4", "POST", {headers: aws_auth_str.join("\n")}, context)
-            .then(function(ares) {
-                var u = "https://"+upInfo.Bucket_Endpoint.Host+"/"+upInfo.Bucket_Endpoint.Name+"/"+upInfo.Key;
+        rest.rest("Cloud/Aws/Bucket/Upload/" + upInfo.Cloud_Aws_Bucket_Upload__ + ":signV4", "POST", {headers: aws_auth_str.join("\n")}, context)
+            .then(function (ares) {
+                var u = "https://" + upInfo.Bucket_Endpoint.Host + "/" + upInfo.Bucket_Endpoint.Name + "/" + upInfo.Key;
                 if (query != "") u = u + "?" + query;
 
                 headers["Authorization"] = ares.data.authorization;
 
                 fetch(u, {
                     method: method,
-                    body : body,
+                    body: body,
                     headers: headers
                 })
                     .then(resolve, reject)
@@ -85,18 +85,18 @@ function awsReq(upInfo, method, query, body, headers, context) {
             }, reject)
             .catch(reject);
 
-    })
+    });
 
     return promise;
 }
 
-module.exports.upload = (function() {
-    var upload          = {};
-    var upload_queue    = []; // queue of uploads to run
-    var upload_failed   = []; // failed upload(s)
-    var upload_running  = {}; // currently processing uploads
-    var up_id           = 0; // next upload id
-    var last_input      = null;
+module.exports.upload = (function () {
+    var upload = {};
+    var upload_queue = []; // queue of uploads to run
+    var upload_failed = []; // failed upload(s)
+    var upload_running = {}; // currently processing uploads
+    var up_id = 0; // next upload id
+    var last_input = null;
 
 
     function sendprogress() {
@@ -113,10 +113,10 @@ module.exports.upload = (function() {
         // set params for upload
         params["filename"] = up.file.name;
         params["size"] = up.file.size;
-        params["lastModified"] = up.file.lastModified/1000;
+        params["lastModified"] = up.file.lastModified / 1000;
         params["type"] = up.file.type;
 
-        rest.rest(up.path, "POST", params, up.context).then(function(res) {
+        rest.rest(up.path, "POST", params, up.context).then(function (res) {
             if (!res["data"]["Cloud_Aws_Bucket_Upload__"]) {
                 // invalid data
                 up.reject();
@@ -128,11 +128,11 @@ module.exports.upload = (function() {
             up.info = res["data"]; // contains stuff like Bucket_Endpoint, Key, etc
 
             // ok we are ready to upload - this will initiate an upload
-            awsReq(up.info, "POST", "uploads=", "", {"Content-Type": up.file.type,"X-Amz-Acl":"private"}, up.context)
-				.then(response => response.text())
+            awsReq(up.info, "POST", "uploads=", "", {"Content-Type": up.file.type, "X-Amz-Acl": "private"}, up.context)
+                .then(response => response.text())
                 .then(str => (new DOMParser()).parseFromString(str, "text/xml"))
                 .then(dom => dom.querySelector('UploadId').innerHTML)
-				.then(function (uploadId) {
+                .then(function (uploadId) {
                     up.uploadId = uploadId;
 
                     // ok, let's compute block size so we know how many parts we need to send
@@ -147,14 +147,14 @@ module.exports.upload = (function() {
                     upload.run();
                 }).catch(res => failure(up, res))
         })
-			.catch(res => failure(up, res));
+            .catch(res => failure(up, res));
     }
 
 
-    function failure(up, data){
-        if(!(up.up_id in upload_running)) return;
+    function failure(up, data) {
+        if (!(up.up_id in upload_running)) return;
 
-        for(var i = 0, len = upload_failed.length; i < len; i++) {
+        for (var i = 0, len = upload_failed.length; i < len; i++) {
             if (upload_failed[i].up_id === up.up_id) {
                 //already in
                 return;
@@ -166,34 +166,34 @@ module.exports.upload = (function() {
         delete upload_running[up.up_id];
         upload.run();
         sendprogress();
-        setTimeout(function() {
+        setTimeout(function () {
             var evt = new CustomEvent("upload:failed", {
                 detail: {
                     item: up,
-                    res : data
+                    res: data
                 }
             });
             document.dispatchEvent(evt);
         }, 10);
     }
-    
+
     function do_upload_part(up, partno) {
         // ok, need to start this!
         up.b[partno] = "pending";
-        var start = partno*up.bsize;
-        var part = up.file.slice(start, start+up.bsize);
+        var start = partno * up.bsize;
+        var part = up.file.slice(start, start + up.bsize);
 
         var reader = new FileReader();
-        reader.addEventListener("loadend", function() {
-            awsReq(up.info, "PUT", "partNumber="+(partno+1)+"&uploadId="+up.uploadId, reader.result, null, up.context)
-				.then(function(response){
+        reader.addEventListener("loadend", function () {
+            awsReq(up.info, "PUT", "partNumber=" + (partno + 1) + "&uploadId=" + up.uploadId, reader.result, null, up.context)
+                .then(function (response) {
                     up.b[partno] = response.headers.get("ETag");
                     sendprogress();
                     upload.run();
-				}).catch(res => failure(up, res));
+                }).catch(res => failure(up, res));
         });
 
-        reader.addEventListener("error", function(e) {
+        reader.addEventListener("error", function (e) {
             failure(up, e);
         });
 
@@ -206,7 +206,7 @@ module.exports.upload = (function() {
 
         var p = 0; // pending
         var d = 0; // done
-        for(var i = 0; i < up.blocks; i++) {
+        for (var i = 0; i < up.blocks; i++) {
             if (up.b[i] == undefined) {
                 if (up.paused) break; // do not start new parts if paused
                 do_upload_part(up, i);
@@ -224,13 +224,13 @@ module.exports.upload = (function() {
             // complete, see https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
             up["status"] = "validating";
             var xml = "<CompleteMultipartUpload>";
-            for(var i = 0; i < up.blocks; i++) {
-                xml += "<Part><PartNumber>"+(i+1)+"</PartNumber><ETag>"+up.b[i]+"</ETag></Part>";
+            for (var i = 0; i < up.blocks; i++) {
+                xml += "<Part><PartNumber>" + (i + 1) + "</PartNumber><ETag>" + up.b[i] + "</ETag></Part>";
             }
             xml += "</CompleteMultipartUpload>";
-            awsReq(up.info, "POST", "uploadId="+up.uploadId, xml, null, up.context).then(function(r) {
+            awsReq(up.info, "POST", "uploadId=" + up.uploadId, xml, null, up.context).then(function (r) {
                 // if success, need to call finalize
-                rest.rest("Cloud/Aws/Bucket/Upload/"+up.info.Cloud_Aws_Bucket_Upload__+":handleComplete", "POST", {}, up.context).then(function(ares) {
+                rest.rest("Cloud/Aws/Bucket/Upload/" + up.info.Cloud_Aws_Bucket_Upload__ + ":handleComplete", "POST", {}, up.context).then(function (ares) {
                     // SUCCESS!
                     up["status"] = "complete";
                     up["final"] = ares["data"];
@@ -239,7 +239,7 @@ module.exports.upload = (function() {
                     delete upload_running[up.up_id];
                     upload.run();
                 });
-            }).catch(res => failure(up,res));
+            }).catch(res => failure(up, res));
         }
     }
 
@@ -249,7 +249,7 @@ module.exports.upload = (function() {
         // if (upload_failed.length > 0) return; // need to push "retry" to resume
 
         // max 3 uploading files
-        while(Object.keys(upload_running).length < 3) {
+        while (Object.keys(upload_running).length < 3) {
             if (upload_queue.length == 0) return;
             var up = upload_queue.shift();
             upload_running[up.up_id] = up;
@@ -258,28 +258,28 @@ module.exports.upload = (function() {
     }
 
 
-    upload.getStatus = function() {
+    upload.getStatus = function () {
         var prog = {
-            "queue"     : upload_queue,
-            "running"   : Object.keys(upload_running).map(function(e) {
+            "queue": upload_queue,
+            "running": Object.keys(upload_running).map(function (e) {
                 return upload_running[e]
-            }) ,
-            "failed"    : upload_failed,
+            }),
+            "failed": upload_failed,
         };
 
         return prog;
-    }
+    };
 
-    upload.resume = function() {
+    upload.resume = function () {
         // put failed stuff at end of queue, resume upload
-        while(upload_failed.length > 0) {
+        while (upload_failed.length > 0) {
             upload_queue.push(upload_failed.shift());
         }
 
         upload.run();
     };
 
-    upload.init = function(path, params, notify) {
+    upload.init = function (path, params, notify) {
         // perform upload to a given API, for example Drive/Item/<id>:upload
         // will allow multiple files to be uploaded
         params = params || {};
@@ -290,7 +290,7 @@ module.exports.upload = (function() {
         }
 
         var input = document.createElement("input");
-        input.type="file";
+        input.type = "file";
         input.style.display = "none";
         if (!params["single"]) {
             input.multiple = "multiple";
@@ -299,43 +299,52 @@ module.exports.upload = (function() {
         document.getElementsByTagName('body')[0].appendChild(input);
         last_input = input;
 
-		var promise = new Promise(function(resolve, reject){
-            input.onchange = function() {
-				if (this.files.length == 0) {
-				   resolve();
-				}
+        var promise = new Promise(function (resolve, reject) {
+            input.onchange = function () {
+                if (this.files.length == 0) {
+                    resolve();
+                }
 
-				var count = this.files.length;
-
-				for(var i = 0; i < this.files.length; i++) {
-					upload.append(path, this.files[i], params, fwWrapper.getContext()).then(function(obj) {
-						count -= 1;
-					   // Todo notify process
-                        if(notify!== undefined) notify(obj);
-						if (count == 0) resolve();
-					});
-				}
-				upload.run();
-			};
-        })
+                var count = this.files.length;
+                if (notify !== undefined) notify({status: 'init', count: count});
+                for (var i = 0; i < this.files.length; i++) {
+                    upload.append(path, this.files[i], params, fwWrapper.getContext()).then(function (obj) {
+                        count -= 1;
+                        // Todo notify process
+                        if (notify !== undefined) notify(obj);
+                        if (count == 0) resolve();
+                    });
+                }
+                upload.run();
+            };
+        });
 
         input.click();
         return promise;
     };
 
 
-
-    upload.append = function(path, file, params, context) {
-        var promise = new Promise(function(resolve, reject){
+    upload.append = function (path, file, params, context) {
+        var promise = new Promise(function (resolve, reject) {
             params = params || {};
             context = context || fwWrapper.getContext(); // refer to https://git.atonline.com/templates/atonline_drive_2018/issues/58
 
-			var ctx =  {...{}, ...context}
-            upload_queue.push({path: path, file: file, resolve: resolve, reject: reject, "status":"pending", paused: false, up_id: up_id++, params: params, context: ctx});
-		})
+            var ctx = {...{}, ...context};
+            upload_queue.push({
+                path: path,
+                file: file,
+                resolve: resolve,
+                reject: reject,
+                "status": "pending",
+                paused: false,
+                up_id: up_id++,
+                params: params,
+                context: ctx
+            });
+        });
 
         return promise;
-    }
+    };
 
 
     upload.cancelItem = function (up_id) {
@@ -387,7 +396,7 @@ module.exports.upload = (function() {
             }
         }
         sendprogress();
-    }
+    };
 
 
     // changes the status of the item of given ID to "pause" so it stops triggering "do_process_uploading"
@@ -407,7 +416,7 @@ module.exports.upload = (function() {
 
 
     // changes the status of the item of given ID to "uploading" and triggers "do_process_uploading" on it
-    upload.resumeItem = function(up_id) {
+    upload.resumeItem = function (up_id) {
         var itemKey = -1;
         for (var i in upload_running) {
             if (upload_running[i].up_id == up_id) {
@@ -423,7 +432,7 @@ module.exports.upload = (function() {
     };
 
 
-    upload.retryItem = function(up_id){
+    upload.retryItem = function (up_id) {
         var itemKey = -1;
         var up = undefined;
         for (var i in upload_failed) {
@@ -435,7 +444,7 @@ module.exports.upload = (function() {
         }
         if (itemKey >= 0) {
             up.failure = {};
-            for(var i = 0, len = upload_queue.length; i < len; i++) {
+            for (var i = 0, len = upload_queue.length; i < len; i++) {
                 if (upload_queue[i].up_id === up.up_id) {
                     //already in queue what ?
                     return;
@@ -443,8 +452,10 @@ module.exports.upload = (function() {
             }
 
             //reset pending partNumbers
-            for(var i = 0; i < up.blocks; i++) {
-                if(up.b[i] == "pending"){up.b[i] = undefined}
+            for (var i = 0; i < up.blocks; i++) {
+                if (up.b[i] == "pending") {
+                    up.b[i] = undefined
+                }
             }
 
 
@@ -452,7 +463,7 @@ module.exports.upload = (function() {
             upload_queue.push(up);
 
             upload.run();
-            setTimeout(function() {
+            setTimeout(function () {
                 var evt = new CustomEvent("upload:retry", {
                     detail: {
                         item: up,
@@ -470,11 +481,11 @@ module.exports.upload = (function() {
     // perform an upload following a response to upload a file from an API.
     //
     // TODO: if file is small enough, we can skip the multipart upload and just perform a straight PUT (will fail over 5GB, but we probably want a smaller cutoff, like 32MB or less)
-    upload.run = function() {
+    upload.run = function () {
         fillqueue();
 
         // check for elements in "q", start uploads we can start
-        for(var up_id in upload_running) {
+        for (var up_id in upload_running) {
             var up = upload_running[up_id];
             switch (up['status']) {
                 case "pending":
