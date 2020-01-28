@@ -1,6 +1,5 @@
 module.exports.getPrefix = () => FW.prefix;
 module.exports.getLocale = () => FW.Locale;
-module.exports.getUser = () => FW.User;
 module.exports.getUserGroup = () => FW.User_Group;
 module.exports.getPath = () => FW.path;
 module.exports.getCurrency = () => FW.Context.c;
