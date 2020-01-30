@@ -11,5 +11,10 @@ module.exports.getUuid = () => (typeof FW !== "undefined") ? FW.uuid : undefined
 module.exports.getInitialState = () => (typeof FW !== "undefined") ? FW.initial : undefined;
 module.exports.supported = () => true;
 module.exports.GET = (typeof FW !== "undefined") ? FW.GET : {};
-module.exports.Get = (key) => (typeof FW !== "undefined") ? FW.GET[key] : undefined;
+module.exports.Get = (key) => {
+    if(key===undefined)
+        return (typeof FW !== "undefined") ? FW.GET : undefined;
+
+    return (typeof FW !== "undefined") ? FW.GET[key] : undefined;
+}
 module.exports.getMode = () => (typeof FW !== "undefined") ? FW.mode : "offline";
