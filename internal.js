@@ -43,7 +43,7 @@ function rest_url(path, with_token, context) {
     for (var i in context) ctx_final[i] = context[i];
     for (var i in ctx_final) {
         if (i == "_") continue;
-        call_url = call_url + "&_ctx[" + i + "]=" + encodeURIComponent(fwWrapper.getContext()[i]);
+        call_url = call_url + "&_ctx[" + i + "]=" + encodeURIComponent(ctx_final[i]);
     }
     return call_url;
 }
