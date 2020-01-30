@@ -5,6 +5,7 @@ const upload = require('./upload');
 const util = require('./util');
 
 module.exports.GET = internalFW.GET;
+module.exports.Get = internalFW.Get;
 module.exports.getPrefix = internalFW.getPrefix;
 module.exports.getMode = internalFW.getMode;
 module.exports.getLocale = internalFW.getLocale;
