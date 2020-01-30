@@ -26,17 +26,13 @@ function get_timezone_data() {
 
 function rest_url(path, with_token, context) {
     if (!with_token) {
-        if (fwWrapper.getPrefix()) return fwWrapper.getPrefix() + "/_special/rest/" + path;
+        if (fwWrapper.getCallUrlPrefix()) return fwWrapper.getCallUrlPrefix() + "/_special/rest/" + path;
         return "/_special/rest/" + path;
     }
     context = context || {};
 
     if (fwWrapper.getSiteStatic()) {
-        if (fwWrapper.getPrefix()) {
-            var call_url = fwWrapper.getPrefix() + "/_special/rest/" + path + "?static";
-        } else {
-            var call_url = "/_special/rest/" + path + "?static";
-        }
+        var call_url = "/_special/rest/" + path + "?static";
     } else {
         var call_url = "/_special/rest/" + path + "?_csrf_token=" + fwWrapper.getToken();
     }
