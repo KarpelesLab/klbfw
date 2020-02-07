@@ -1,4 +1,5 @@
 'use strict'
+// vim: et:ts=4:sw=4
 
 const internal = require('./internal');
 
@@ -54,7 +55,14 @@ module.exports.rest_get = (name, params) => {
     params = params || {};
     var call_url = internal.rest_url(name, false);responseParse
 
-    if (params) call_url += "?_=" + encodeURIComponent(JSON.stringify(params));
+    if (params) {
+        // check if params is a json string, or if it needs encoding
+        if (typeof params === "string") {
+            call_url += "?_=" + encodeURIComponent(params);
+        } else {
+            call_url += "?_=" + encodeURIComponent(JSON.stringify(params));
+        }
+    }
 
     var restResolved = function(data) {
         internal.responseParse(data, resolve, reject);

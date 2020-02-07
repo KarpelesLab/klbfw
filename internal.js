@@ -1,6 +1,8 @@
 'use strict';
 const fwWrapper = require('./fw-wrapper');
 
+// vim: et:ts=4:sw=4
+
 function get_tz_pad(number, length) {
     var str = "" + number;
     while (str.length < length)
@@ -59,7 +61,14 @@ function internal_rest(name, verb, params, context) {
     var call_url = rest_url(name, true, context);
 
     if (verb == "GET") {
-        if (params) call_url += "&_=" + encodeURIComponent(JSON.stringify(params));
+        if (params) {
+            // check if params is a json string, or if it needs encoding
+            if (typeof params === "string") {
+                call_url += "&_=" + encodeURIComponent(params);
+            } else {
+                call_url += "&_=" + encodeURIComponent(JSON.stringify(params));
+            }
+        }
 
         return fetch(call_url, {method: verb, credentials: 'include'});
     }
