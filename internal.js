@@ -48,74 +48,6 @@ function rest_url(path, with_token, context) {
     return call_url;
 }
 
-function parseUrlParams(urlParams) {
-    return http_build_query(urlParams, '', '&');
-}
-
-function urlencode (str) {
-    // https://locutus.io/php/url/urlencode/
-    str = (str + '')
-
-    return encodeURIComponent(str)
-        .replace(/!/g, '%21')
-        .replace(/'/g, '%27')
-        .replace(/\(/g, '%28')
-        .replace(/\)/g, '%29')
-        .replace(/\*/g, '%2A')
-        .replace(/~/g, '%7E')
-        .replace(/%20/g, '+')
-}
-
-function http_build_query(formdata, numericPrefix, argSeparator) {
-   // https://locutus.io/php/url/http_build_query/
-    var value;
-    var key;
-    var tmp = [];
-
-    var _httpBuildQueryHelper = function (key, val, argSeparator) {
-        var k;
-        var tmp = [];
-        if (val === true) {
-            val = '1'
-        } else if (val === false) {
-            val = '0'
-        }
-        if (val !== null) {
-            if (typeof val === 'object') {
-                for (k in val) {
-                    if (val[k] !== null) {
-                        tmp.push(_httpBuildQueryHelper(key + '[' + k + ']', val[k], argSeparator))
-                    }
-                }
-                return tmp.join(argSeparator)
-            } else if (typeof val !== 'function') {
-                return urlencode(key) + '=' + urlencode(val)
-            } else {
-                throw new Error('There was an error processing for http_build_query().')
-            }
-        } else {
-            return ''
-        }
-    };
-
-    if (!argSeparator) {
-        argSeparator = '&'
-    }
-    for (key in formdata) {
-        value = formdata[key];
-        if (numericPrefix && !isNaN(key)) {
-            key = String(numericPrefix) + key
-        }
-        var query = _httpBuildQueryHelper(key, value, argSeparator);
-        if (query !== '') {
-            tmp.push(query)
-        }
-    }
-
-    return tmp.join(argSeparator)
-}
-
-
 function internal_rest(name, verb, params, context) {
     verb = verb || "GET";
     params = params || {};
@@ -127,8 +59,7 @@ function internal_rest(name, verb, params, context) {
     var call_url = rest_url(name, true, context);
 
     if (verb == "GET") {
-        params = parseUrlParams(params);
-        if (params) call_url += "&" + params;
+        if (params) call_url += "&_=" + encodeURIComponent(JSON.stringify(params));
 
         return fetch(call_url, {method: verb, credentials: 'include'});
     }
@@ -193,8 +124,6 @@ module.exports.get_tz_pad = get_tz_pad;
 module.exports.get_timezone_data = get_timezone_data;
 
 module.exports.rest_url = rest_url;
-
-module.exports.parseUrlParams = parseUrlParams;
 
 module.exports.internal_rest = internal_rest;
 

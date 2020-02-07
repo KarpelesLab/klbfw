@@ -54,8 +54,7 @@ module.exports.rest_get = (name, params) => {
     params = params || {};
     var call_url = internal.rest_url(name, false);responseParse
 
-    params = internal.parseUrlParams(params);
-    if (params) call_url += "?" + params;
+    if (params) call_url += "?_=" + encodeURIComponent(JSON.stringify(params));
 
     var restResolved = function(data) {
         internal.responseParse(data, resolve, reject);
