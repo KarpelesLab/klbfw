@@ -3,6 +3,7 @@ module.exports.getLocale = () => (typeof FW !== "undefined") ? FW.Locale : "en-U
 module.exports.getPath = () => (typeof FW !== "undefined") ? FW.path : window.location.pathname;
 module.exports.getCurrency = () => (typeof FW !== "undefined") ? FW.Context.c : "USD";
 module.exports.getContext = () => (typeof FW !== "undefined") ? FW.Context : {};
+module.exports.setContext = (k, v) => { if (typeof FW !== "undefined") FW.Context[k] = v; };
 module.exports.getToken = () => (typeof FW !== "undefined") ? FW.token : undefined;
 module.exports.getUrl = () => (typeof FW !== "undefined") ? FW.URL : {path: window.location.pathname, full: window.location.href};
 module.exports.getSiteStatic = () => (typeof FW !== "undefined") ? FW.site_static : true;
@@ -17,4 +18,5 @@ module.exports.Get = (key) => {
 
     return (typeof FW !== "undefined") ? FW.GET[key] : undefined;
 }
+module.exports.flushGet = () => { if (typeof FW !== "undefined") FW.GET = {}; };
 module.exports.getMode = () => (typeof FW !== "undefined") ? FW.mode : "offline";

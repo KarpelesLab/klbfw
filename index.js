@@ -6,7 +6,10 @@ const util = require('./util');
 
 module.exports.GET = internalFW.GET;
 module.exports.Get = internalFW.Get;
+module.exports.flushGet = internalFW.flushGet;
 module.exports.getPrefix = internalFW.getPrefix;
+module.exports.getContext = internalFW.getContext;
+module.exports.setContext = internalFW.setContext;
 module.exports.getMode = internalFW.getMode;
 module.exports.getLocale = internalFW.getLocale;
 module.exports.getUserGroup = internalFW.getUserGroup;
