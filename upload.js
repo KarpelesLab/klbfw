@@ -238,7 +238,7 @@ module.exports.upload = (function () {
                     up.resolve(up);
                     delete upload_running[up.up_id];
                     upload.run();
-                });
+                }).catch(res => failure(up, res));
             }).catch(res => failure(up, res));
         }
     }
