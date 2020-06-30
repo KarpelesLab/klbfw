@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 const internalFW = require('./fw-wrapper');
 const rest = require('./rest');
 const upload = require('./upload');
@@ -13,8 +13,8 @@ module.exports.setContext = internalFW.setContext;
 module.exports.getMode = internalFW.getMode;
 module.exports.getLocale = internalFW.getLocale;
 module.exports.getUserGroup = internalFW.getUserGroup;
-module.exports.getCurrency =  internalFW.getCurrency;
-module.exports.getToken =  internalFW.getToken;
+module.exports.getCurrency = internalFW.getCurrency;
+module.exports.getToken = internalFW.getToken;
 module.exports.getUrl = internalFW.getUrl;
 module.exports.getPath = internalFW.getPath;
 module.exports.getUuid = internalFW.getUuid;
@@ -25,4 +25,5 @@ module.exports.rest_get = rest.rest_get;
 
 module.exports.upload = upload.upload;
 
-module.exports.getI18N = util.getI18N
+module.exports.getI18N = util.getI18N;
+module.exports.trimPrefix = util.trimPrefix;
