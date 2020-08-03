@@ -1,6 +1,7 @@
 module.exports.getPrefix = () => (typeof FW !== "undefined") ? FW.prefix : "";
 module.exports.getLocale = () => (typeof FW !== "undefined") ? FW.Locale : "en-US";
 module.exports.getPath = () => (typeof FW !== "undefined") ? FW.path : window.location.pathname;
+module.exports.getHostname = () => (typeof FW !== "undefined") ? FW.hostname : window.location.hostname;
 module.exports.getCurrency = () => (typeof FW !== "undefined") ? FW.Context.c : "USD";
 module.exports.getContext = () => (typeof FW !== "undefined") ? FW.Context : {};
 module.exports.setContext = (k, v) => { if (typeof FW !== "undefined") FW.Context[k] = v; };
