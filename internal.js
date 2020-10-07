@@ -122,7 +122,7 @@ function responseParse(response, resolve, reject) {
     response.json().then(
         function (json) {
             if (json.result != "success" && json.result != "redirect") reject(json);
-            resolve(json);
+            else resolve(json);
         },
         reject
     ).catch(reject)
