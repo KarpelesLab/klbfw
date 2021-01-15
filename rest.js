@@ -53,7 +53,7 @@ module.exports.rest_get = (name, params) => {
     if(!internal.checkSupport()) return;
 
     params = params || {};
-    var call_url = internal.rest_url(name, false);responseParse
+    var call_url = internal.rest_url(name, false);
 
     if (params) {
         // check if params is a json string, or if it needs encoding

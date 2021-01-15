@@ -121,8 +121,16 @@ function responseParse(response, resolve, reject) {
 
     response.json().then(
         function (json) {
-            if (json.result != "success" && json.result != "redirect") reject(json);
-            else resolve(json);
+            // check for gtag
+            if ((json.gtag) && (window.gtag)) {
+                json.gtag.map((item) => window.gtag.apply(null, item));
+            }
+            // check for result
+            if (json.result != "success" && json.result != "redirect") {
+                reject(json);
+            } else {
+                resolve(json);
+            }
         },
         reject
     ).catch(reject)
