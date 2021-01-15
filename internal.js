@@ -122,7 +122,7 @@ function responseParse(response, resolve, reject) {
     response.json().then(
         function (json) {
             // check for gtag
-            if ((json.gtag) && (window.gtag)) {
+            if ((json.gtag) && (typeof window !== "undefined") && (window.gtag)) {
                 json.gtag.map((item) => window.gtag.apply(null, item));
             }
             // check for result
