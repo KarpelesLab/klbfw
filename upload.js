@@ -228,7 +228,9 @@ module.exports.upload = (function () {
                 xml += "<Part><PartNumber>" + (i + 1) + "</PartNumber><ETag>" + up.b[i] + "</ETag></Part>";
             }
             xml += "</CompleteMultipartUpload>";
-            awsReq(up.info, "POST", "uploadId=" + up.uploadId, xml, null, up.context).then(function (r) {
+            awsReq(up.info, "POST", "uploadId=" + up.uploadId, xml, null, up.context)
+            .then(response => response.text())
+            .then(function (r) {
                 // if success, need to call finalize
                 rest.rest("Cloud/Aws/Bucket/Upload/" + up.info.Cloud_Aws_Bucket_Upload__ + ":handleComplete", "POST", {}, up.context).then(function (ares) {
                     // SUCCESS!
