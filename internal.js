@@ -111,7 +111,7 @@ function responseParse(response, resolve, reject) {
     if (!contentType || contentType.indexOf("application/json") == -1) {
         response.text().then(
             function (text) {
-                reject({message: "Not JSON", body: text});
+                reject({message: "Not JSON", body: text, headers: response.headers});
             },
             reject
         ).catch(reject);
@@ -127,6 +127,7 @@ function responseParse(response, resolve, reject) {
             }
             // check for result
             if (json.result != "success" && json.result != "redirect") {
+            	json.headers = response.headers;
                 reject(json);
             } else {
                 resolve(json);
