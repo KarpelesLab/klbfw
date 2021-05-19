@@ -127,7 +127,7 @@ function responseParse(response, resolve, reject) {
             }
             // check for result
             if (json.result != "success" && json.result != "redirect") {
-            	json.headers = response.headers;
+                json.headers = response.headers;
                 reject(json);
             } else {
                 resolve(json);
