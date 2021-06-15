@@ -46,5 +46,5 @@ module.exports.setCookie = function(cname, value, exdays) {
     if (d) {
         expires = "expires="+ d.toUTCString();
     }
-    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/;secure;samesite=none";
+    document.cookie = cname + "=" + value + ";" + expires + ";path=/;secure;samesite=none";
 };
