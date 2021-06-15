@@ -22,6 +22,11 @@ module.exports.getCookie = function(cname) {
 };
 
 module.exports.setCookie = function(cname, value, exdays) {
+    if (typeof FW !== "undefined") {
+        // always override value
+        FW.cookies[cname] = value;
+    }
+
     var d = undefined;
     if (exdays > 0) {
         d = new Date();
