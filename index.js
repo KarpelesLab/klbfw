@@ -22,6 +22,7 @@ module.exports.getPath = internalFW.getPath;
 module.exports.getUuid = internalFW.getUuid;
 module.exports.getInitialState = internalFW.getInitialState;
 module.exports.getCookie = cookies.getCookie;
+module.exports.hasCookie = cookies.hasCookie;
 module.exports.setCookie = cookies.setCookie;
 
 module.exports.rest = rest.rest;

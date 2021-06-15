@@ -21,6 +21,26 @@ module.exports.getCookie = function(cname) {
     return undefined;
 };
 
+module.exports.hasCookie = function(cname) {
+    if (typeof FW !== "undefined") {
+        return ((FW.cookies.hasOwnProperty(cname)) && (FW.cookies[cname]));
+    }
+
+    var name = cname + "=";
+    var decodedCookie = decodeURIComponent(document.cookie);
+    var ca = decodedCookie.split(';');
+    for(var i = 0; i <ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0) == ' ') {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+            return true;
+        }
+    }
+    return false;
+};
+
 module.exports.setCookie = function(cname, value, exdays) {
     if (typeof FW !== "undefined") {
         // always override value
