@@ -3,6 +3,7 @@ const internalFW = require('./fw-wrapper');
 const rest = require('./rest');
 const upload = require('./upload');
 const util = require('./util');
+const cookies = require('./cookies');
 
 module.exports.GET = internalFW.GET;
 module.exports.Get = internalFW.Get;
@@ -20,6 +21,8 @@ module.exports.getUrl = internalFW.getUrl;
 module.exports.getPath = internalFW.getPath;
 module.exports.getUuid = internalFW.getUuid;
 module.exports.getInitialState = internalFW.getInitialState;
+module.exports.getCookie = cookies.getCookie;
+module.exports.setCookie = cookies.setCookie;
 
 module.exports.rest = rest.rest;
 module.exports.rest_get = rest.rest_get;
