@@ -36,7 +36,7 @@ function rest_url(path, with_token, context) {
     if (fwWrapper.getSiteStatic()) {
         var call_url = "/_special/rest/" + path + "?static";
     } else {
-        var call_url = "/_special/rest/" + path + "?_csrf_token=" + fwWrapper.getToken();
+        var call_url = "/_special/rest/" + path;
     }
     if (fwWrapper.getCallUrlPrefix()) call_url = fwWrapper.getCallUrlPrefix() + call_url;
 
@@ -60,6 +60,11 @@ function internal_rest(name, verb, params, context) {
     }
     var call_url = rest_url(name, true, context);
 
+    var headers = {};
+    if (fwWrapper.getToken() != '') {
+        headers['Authorization'] = 'Session '+fwWrapper.getToken();
+    }
+
     if (verb == "GET") {
         if (params) {
             // check if params is a json string, or if it needs encoding
@@ -70,24 +75,25 @@ function internal_rest(name, verb, params, context) {
             }
         }
 
-        return fetch(call_url, {method: verb, credentials: 'include'});
+        return fetch(call_url, {method: verb, credentials: 'include', headers: headers});
     }
 
     if ((FormData != undefined) && (params instanceof FormData)) {
         return fetch(call_url, {
             method: verb,
             credentials: 'include',
-            body: params
+            body: params,
+            headers: headers
         });
     }
+
+    headers['Content-Type'] = 'application/json; charset=utf-8';
 
     return fetch(call_url, {
         method: verb,
         credentials: 'include',
         body: JSON.stringify(params),
-        headers: {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
+        headers: headers
     });
 }
 
