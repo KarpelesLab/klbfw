@@ -1,4 +1,6 @@
 module.exports.getPrefix = () => (typeof FW !== "undefined") ? FW.prefix : "";
+module.exports.getSettings = () => (typeof FW !== "undefined") ? FW.settings : {};
+module.exports.getRealm = () => (typeof FW !== "undefined") ? FW.Realm : {};
 module.exports.getLocale = () => (typeof FW !== "undefined") ? FW.Locale : "en-US";
 module.exports.getPath = () => (typeof FW !== "undefined") ? FW.path : window.location.pathname;
 module.exports.getHostname = () => (typeof FW !== "undefined") ? FW.hostname : window.location.hostname;
