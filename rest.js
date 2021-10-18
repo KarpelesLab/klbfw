@@ -4,6 +4,9 @@
 const internal = require('./internal');
 
 module.exports.rest = (name, verb, params, context) => {
+    if (typeof __platformAsyncRest !== "undefined") {
+        return __platformAsyncRest(name, verb, params);
+    }
     if (typeof __platformRest !== "undefined") {
       // direct SSR-mode call to rest api
       return new Promise(function(resolve, reject) {
@@ -39,6 +42,9 @@ module.exports.rest = (name, verb, params, context) => {
 };
 
 module.exports.rest_get = (name, params) => {
+    if (typeof __platformAsyncRest !== "undefined") {
+        return __platformAsyncRest(name, "GET", params);
+    }
     if (typeof __platformRest !== "undefined") {
       // direct SSR-mode call to rest api
       return new Promise(function(resolve, reject) {

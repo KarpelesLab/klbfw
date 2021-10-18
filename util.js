@@ -4,6 +4,10 @@ const internalFW = require('./fw-wrapper');
 function getI18N(language) {
     language = language || internalFW.getLocale();
 
+    if (typeof __platformAsyncI18N !== "undefined") {
+        // new SSR mode
+        return __platformAsyncI18N(language);
+    }
     if (typeof __platformGetI18N !== "undefined") {
         // we are in SSR mode
         return new Promise(function (resolve, reject) {
