@@ -15,6 +15,7 @@ module.exports.getContext = internalFW.getContext;
 module.exports.setContext = internalFW.setContext;
 module.exports.getMode = internalFW.getMode;
 module.exports.getHostname = internalFW.getHostname;
+module.exports.getRegistry = internalFW.getRegistry;
 module.exports.getLocale = internalFW.getLocale;
 module.exports.getUserGroup = internalFW.getUserGroup;
 module.exports.getCurrency = internalFW.getCurrency;

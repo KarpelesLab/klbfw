@@ -8,6 +8,7 @@ module.exports.getCurrency = () => (typeof FW !== "undefined") ? FW.Context.c : 
 module.exports.getContext = () => (typeof FW !== "undefined") ? FW.Context : {};
 module.exports.setContext = (k, v) => { if (typeof FW !== "undefined") FW.Context[k] = v; };
 module.exports.getToken = () => (typeof FW !== "undefined") ? FW.token : undefined;
+module.exports.getRegistry = () => (typeof FW !== "undefined") ? FW.Registry : undefined;
 module.exports.getUrl = () => (typeof FW !== "undefined") ? FW.URL : {path: window.location.pathname, full: window.location.href};
 module.exports.getSiteStatic = () => (typeof FW !== "undefined") ? FW.site_static : true;
 module.exports.getCallUrlPrefix = () => (typeof FW !== "undefined") ? FW.call_url_prefix : "https://hub.atonline.com";
