@@ -11,9 +11,13 @@ module.exports.rest = (name, verb, params, context) => {
       // direct SSR-mode call to rest api
       return new Promise(function(resolve, reject) {
         __platformRest(name, verb, params, function(res, err) {
-          if (err) reject(err);
-          if (res.result != "success") reject(res);
-          resolve(res);
+            if (err) {
+                reject(err);
+            } else if (res.result != "success") {
+                reject(res);
+            } else {
+                resolve(res);
+            }
         });
       });
     }
@@ -49,9 +53,13 @@ module.exports.rest_get = (name, params) => {
       // direct SSR-mode call to rest api
       return new Promise(function(resolve, reject) {
         __platformRest(name, "GET", params, function(res, err) {
-          if (err) reject(err);
-          if (res.result != "success") reject(res);
-          resolve(res);
+            if (err) {
+                reject(err);
+            } else if (res.result != "success") {
+                reject(res);
+            } else {
+                resolve(res);
+            }
         });
       });
     }
