@@ -2,10 +2,14 @@
 // vim: et:ts=4:sw=4
 
 const internal = require('./internal');
+const fwWrapper = require('./fw-wrapper');
 
 module.exports.rest = (name, verb, params, context) => {
     if (typeof __platformAsyncRest !== "undefined") {
-        return __platformAsyncRest(name, verb, params);
+        context = context || {};
+        var ctx_final = fwWrapper.getContext();
+        for (var i in context) ctx_final[i] = context[i];
+        return __platformAsyncRest(name, verb, params, ctx_final);
     }
     if (typeof __platformRest !== "undefined") {
       // direct SSR-mode call to rest api
