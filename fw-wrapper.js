@@ -5,7 +5,7 @@ module.exports.getLocale = () => (typeof FW !== "undefined") ? FW.Locale : "en-U
 module.exports.getPath = () => (typeof FW !== "undefined") ? FW.path : window.location.pathname;
 module.exports.getHostname = () => (typeof FW !== "undefined") ? FW.hostname : window.location.hostname;
 module.exports.getCurrency = () => (typeof FW !== "undefined") ? FW.Context.c : "USD";
-module.exports.getContext = () => (typeof FW !== "undefined") ? FW.Context : {};
+module.exports.getContext = () => (typeof FW !== "undefined") ? Object.assign({}, FW.Context) : {};
 module.exports.setContext = (k, v) => { if (typeof FW !== "undefined") FW.Context[k] = v; };
 module.exports.getToken = () => (typeof FW !== "undefined") ? FW.token : undefined;
 module.exports.getRegistry = () => (typeof FW !== "undefined") ? FW.Registry : undefined;

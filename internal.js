@@ -43,7 +43,7 @@ function rest_url(path, with_token, context) {
     if (fwWrapper.getCallUrlPrefix()) call_url = fwWrapper.getCallUrlPrefix() + call_url;
 
     // copy context, proceed with overload then add to url
-    var ctx_final = Object.assign({}, fwWrapper.getContext());
+    var ctx_final = fwWrapper.getContext();
     for (var i in context) ctx_final[i] = context[i];
     for (var i in ctx_final) {
         if (i == "_") continue;
@@ -132,7 +132,7 @@ function responseParse(response, resolve, reject) {
         function (json) {
             // check for gtag
             if ((json.gtag) && (typeof window !== "undefined") && (window.gtag)) {
-                json.gtag.map((item) => window.gtag.apply(null, item));
+                json.gtag.map(function (item) { window.gtag.apply(null, item); });
             }
             // check for result
             if (json.result != "success" && json.result != "redirect") {
