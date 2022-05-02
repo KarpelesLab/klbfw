@@ -7,7 +7,7 @@ const fwWrapper = require('./fw-wrapper');
 module.exports.rest = (name, verb, params, context) => {
     if (typeof __platformAsyncRest !== "undefined") {
         context = context || {};
-        var ctx_final = fwWrapper.getContext();
+        var ctx_final = Object.assign({}, fwWrapper.getContext());
         for (var i in context) ctx_final[i] = context[i];
         return __platformAsyncRest(name, verb, params, ctx_final);
     }
