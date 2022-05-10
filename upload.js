@@ -265,10 +265,10 @@ module.exports.upload = (function () {
         up["done"] = d;
 
         if (p == 0) {
+            up["status"] = "validating";
             switch(up.method) {
             case 'aws':
                 // complete, see https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
-                up["status"] = "validating";
                 var xml = "<CompleteMultipartUpload>";
                 for (var i = 0; i < up.blocks; i++) {
                     xml += "<Part><PartNumber>" + (i + 1) + "</PartNumber><ETag>" + up.b[i] + "</ETag></Part>";
