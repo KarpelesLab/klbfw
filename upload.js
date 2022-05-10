@@ -117,35 +117,55 @@ module.exports.upload = (function () {
         params["type"] = up.file.type;
 
         rest.rest(up.path, "POST", params, up.context).then(function (res) {
-            if (!res["data"]["Cloud_Aws_Bucket_Upload__"]) {
-                // invalid data
-                up.reject();
-                delete upload_running[up.up_id];
-                upload_failed.push(up);
-                return;
+            // Method 1: aws signed multipart upload
+            if (res["data"]["Cloud_Aws_Bucket_Upload__"]) {
+                up.info = res["data"]; // contains stuff like Bucket_Endpoint, Key, etc
+
+                // ok we are ready to upload - this will initiate an upload
+                awsReq(up.info, "POST", "uploads=", "", {"Content-Type": up.file.type, "X-Amz-Acl": "private"}, up.context)
+                    .then(response => response.text())
+                    .then(str => (new DOMParser()).parseFromString(str, "text/xml"))
+                    .then(dom => dom.querySelector('UploadId').innerHTML)
+                    .then(function (uploadId) {
+                        up.uploadId = uploadId;
+
+                        // ok, let's compute block size so we know how many parts we need to send
+                        var fsize = up.file.size;
+                        var bsize = Math.ceil(fsize / 10000); // we want ~10k parts
+                        if (bsize < 5242880) bsize = 5242880; // minimum block size = 5MB
+
+                        up.method = 'aws';
+                        up.bsize = bsize;
+                        up.blocks = Math.ceil(fsize / bsize);
+                        up.b = {};
+                        up['status'] = 'uploading';
+                        upload.run();
+                    }).catch(res => failure(up, res))
+		return;
             }
+            // Method 2: PUT requests
+            if (res["data"]["PUT"]) {
+                var fsize = up.file.size;
+                var bsize = fsize; // upload file in a single block
+                if (res["data"]["Blocksize"]) {
+                    // this upload target supports multipart PUT upload
+                    bsize = res["data"]["Blocksize"]; // multipart upload
+                }
 
-            up.info = res["data"]; // contains stuff like Bucket_Endpoint, Key, etc
-
-            // ok we are ready to upload - this will initiate an upload
-            awsReq(up.info, "POST", "uploads=", "", {"Content-Type": up.file.type, "X-Amz-Acl": "private"}, up.context)
-                .then(response => response.text())
-                .then(str => (new DOMParser()).parseFromString(str, "text/xml"))
-                .then(dom => dom.querySelector('UploadId').innerHTML)
-                .then(function (uploadId) {
-                    up.uploadId = uploadId;
-
-                    // ok, let's compute block size so we know how many parts we need to send
-                    var fsize = up.file.size;
-                    var bsize = Math.ceil(fsize / 10000); // we want ~10k parts
-                    if (bsize < 5242880) bsize = 5242880; // minimum block size = 5MB
-
-                    up.bsize = bsize;
-                    up.blocks = Math.ceil(fsize / bsize);
-                    up.b = {};
-                    up['status'] = 'uploading';
-                    upload.run();
-                }).catch(res => failure(up, res))
+                up.info = res["data"];
+                up.method = 'put';
+                up.bsize = bsize;
+                up.blocks = Math.ceil(fsize / bsize);
+                up.b = {};
+                up['status'] = 'uploading';
+                upload.run();
+		return;
+            }
+            // invalid data
+            up.reject();
+            delete upload_running[up.up_id];
+            upload_failed.push(up);
+            return;
         })
             .catch(res => failure(up, res));
     }
@@ -185,12 +205,34 @@ module.exports.upload = (function () {
 
         var reader = new FileReader();
         reader.addEventListener("loadend", function () {
-            awsReq(up.info, "PUT", "partNumber=" + (partno + 1) + "&uploadId=" + up.uploadId, reader.result, null, up.context)
-                .then(function (response) {
-                    up.b[partno] = response.headers.get("ETag");
+            switch(up.method) {
+            case 'aws':
+                awsReq(up.info, "PUT", "partNumber=" + (partno + 1) + "&uploadId=" + up.uploadId, reader.result, null, up.context)
+                    .then(function (response) {
+                        up.b[partno] = response.headers.get("ETag");
+                        sendprogress();
+                        upload.run();
+                    }).catch(res => failure(up, res));
+            case 'put':
+                let headers = {};
+                headers["Content-Type"] = up.file.type;
+                if (up.blocks > 1) {
+                    // add Content-Range header
+                    // Content-Range: bytes start-end/*
+                    const end = start + reader.result.byteLength - 1; // inclusive
+                    headers["Content-Range"] = "bytes "+start+"-"+end+"/*";
+                }
+
+                fetch(up.info["PUT"], {
+                    method: "PUT",
+                    body: reader.result,
+                    headers: headers,
+                }).then(function (response) {
+                    up.b[partno] = "done";
                     sendprogress();
                     upload.run();
                 }).catch(res => failure(up, res));
+            }
         });
 
         reader.addEventListener("error", function (e) {
@@ -221,19 +263,33 @@ module.exports.upload = (function () {
         up["done"] = d;
 
         if (p == 0) {
-            // complete, see https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
-            up["status"] = "validating";
-            var xml = "<CompleteMultipartUpload>";
-            for (var i = 0; i < up.blocks; i++) {
-                xml += "<Part><PartNumber>" + (i + 1) + "</PartNumber><ETag>" + up.b[i] + "</ETag></Part>";
-            }
-            xml += "</CompleteMultipartUpload>";
-            awsReq(up.info, "POST", "uploadId=" + up.uploadId, xml, null, up.context)
-            .then(response => response.text())
-            .then(function (r) {
-                // if success, need to call finalize
-                rest.rest("Cloud/Aws/Bucket/Upload/" + up.info.Cloud_Aws_Bucket_Upload__ + ":handleComplete", "POST", {}, up.context).then(function (ares) {
-                    // SUCCESS!
+            switch(up.method) {
+            case 'aws':
+                // complete, see https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
+                up["status"] = "validating";
+                var xml = "<CompleteMultipartUpload>";
+                for (var i = 0; i < up.blocks; i++) {
+                    xml += "<Part><PartNumber>" + (i + 1) + "</PartNumber><ETag>" + up.b[i] + "</ETag></Part>";
+                }
+                xml += "</CompleteMultipartUpload>";
+                awsReq(up.info, "POST", "uploadId=" + up.uploadId, xml, null, up.context)
+                .then(response => response.text())
+                .then(function (r) {
+                    // if success, need to call finalize
+                    rest.rest("Cloud/Aws/Bucket/Upload/" + up.info.Cloud_Aws_Bucket_Upload__ + ":handleComplete", "POST", {}, up.context).then(function (ares) {
+                        // SUCCESS!
+                        up["status"] = "complete";
+                        up["final"] = ares["data"];
+                        sendprogress();
+                        up.resolve(up);
+                        delete upload_running[up.up_id];
+                        upload.run();
+                    }).catch(res => failure(up, res));
+                }).catch(res => failure(up, res));
+            case 'put':
+                // complete, directly call handleComplete
+                rest.rest(up.info.Complete, "POST", {}, up.context).then(function (ares) {
+                    // success!
                     up["status"] = "complete";
                     up["final"] = ares["data"];
                     sendprogress();
@@ -241,7 +297,7 @@ module.exports.upload = (function () {
                     delete upload_running[up.up_id];
                     upload.run();
                 }).catch(res => failure(up, res));
-            }).catch(res => failure(up, res));
+            }
         }
     }
 
