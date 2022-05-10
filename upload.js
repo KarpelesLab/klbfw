@@ -141,7 +141,7 @@ module.exports.upload = (function () {
                         up['status'] = 'uploading';
                         upload.run();
                     }).catch(res => failure(up, res))
-		return;
+                return;
             }
             // Method 2: PUT requests
             if (res["data"]["PUT"]) {
@@ -159,7 +159,7 @@ module.exports.upload = (function () {
                 up.b = {};
                 up['status'] = 'uploading';
                 upload.run();
-		return;
+                return;
             }
             // invalid data
             up.reject();
@@ -213,6 +213,7 @@ module.exports.upload = (function () {
                         sendprogress();
                         upload.run();
                     }).catch(res => failure(up, res));
+                break;
             case 'put':
                 let headers = {};
                 headers["Content-Type"] = up.file.type;
@@ -232,6 +233,7 @@ module.exports.upload = (function () {
                     sendprogress();
                     upload.run();
                 }).catch(res => failure(up, res));
+                break;
             }
         });
 
@@ -286,6 +288,7 @@ module.exports.upload = (function () {
                         upload.run();
                     }).catch(res => failure(up, res));
                 }).catch(res => failure(up, res));
+                break;
             case 'put':
                 // complete, directly call handleComplete
                 rest.rest(up.info.Complete, "POST", {}, up.context).then(function (ares) {
@@ -297,6 +300,7 @@ module.exports.upload = (function () {
                     delete upload_running[up.up_id];
                     upload.run();
                 }).catch(res => failure(up, res));
+                break;
             }
         }
     }
