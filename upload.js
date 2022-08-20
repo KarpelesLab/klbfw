@@ -100,7 +100,7 @@ module.exports.upload = (function () {
 
 
     function sendprogress() {
-        if (upload.onprogress == undefined) return;
+        if (typeof upload.onprogress === "undefined") return;
 
         upload.onprogress(upload.getStatus());
     }
@@ -162,9 +162,9 @@ module.exports.upload = (function () {
                 return;
             }
             // invalid data
-            up.reject();
             delete upload_running[up.up_id];
             upload_failed.push(up);
+            up.reject();
             return;
         })
             .catch(res => failure(up, res));
@@ -296,8 +296,8 @@ module.exports.upload = (function () {
                     up["status"] = "complete";
                     up["final"] = ares["data"];
                     sendprogress();
-                    up.resolve(up);
                     delete upload_running[up.up_id];
+                    up.resolve(up);
                     upload.run();
                 }).catch(res => failure(up, res));
                 break;
