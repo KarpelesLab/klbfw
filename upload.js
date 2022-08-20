@@ -158,7 +158,6 @@ module.exports.upload = (function () {
                 up.blocks = Math.ceil(fsize / bsize);
                 up.b = {};
                 up['status'] = 'uploading';
-                upload.run();
                 return;
             }
             // invalid data
