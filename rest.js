@@ -9,7 +9,16 @@ module.exports.rest = (name, verb, params, context) => {
         context = context || {};
         var ctx_final = fwWrapper.getContext();
         for (var i in context) ctx_final[i] = context[i];
-        return __platformAsyncRest(name, verb, params, ctx_final);
+        var p1 = new Promise(function(resolve, reject) {
+            __platformAsyncRest(name, verb, params, ctx_final).then(function(result) {
+                if (result.result != "success") {
+                    reject(result);
+                } else {
+                    resolve(result);
+                }
+            }, reject);
+        });
+        return p1;
     }
     if (typeof __platformRest !== "undefined") {
       // direct SSR-mode call to rest api
