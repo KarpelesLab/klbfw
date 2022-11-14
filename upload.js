@@ -186,15 +186,17 @@ module.exports.upload = (function () {
         delete upload_running[up.up_id];
         upload.run();
         sendprogress();
-        setTimeout(function () {
-            var evt = new CustomEvent("upload:failed", {
-                detail: {
-                    item: up,
-                    res: data
-                }
-            });
-            document.dispatchEvent(evt);
-        }, 10);
+        if (typeof document !== "undefined") {
+            setTimeout(function () {
+                var evt = new CustomEvent("upload:failed", {
+                    detail: {
+                        item: up,
+                        res: data
+                    }
+                });
+                document.dispatchEvent(evt);
+            }, 10);
+        }
     }
 
     function do_upload_part(up, partno) {
@@ -341,49 +343,51 @@ module.exports.upload = (function () {
         upload.run();
     };
 
-    upload.init = function (path, params, notify) {
-        // perform upload to a given API, for example Drive/Item/<id>:upload
-        // will allow multiple files to be uploaded
-        params = params || {};
+    if (typeof document !== "undefined") {
+        upload.init = function (path, params, notify) {
+            // perform upload to a given API, for example Drive/Item/<id>:upload
+            // will allow multiple files to be uploaded
+            params = params || {};
 
-        if (last_input != null) {
-            last_input.parentNode.removeChild(last_input);
-            last_input = null;
-        }
+            if (last_input != null) {
+                last_input.parentNode.removeChild(last_input);
+                last_input = null;
+            }
 
-        var input = document.createElement("input");
-        input.type = "file";
-        input.style.display = "none";
-        if (!params["single"]) {
-            input.multiple = "multiple";
-        }
+            var input = document.createElement("input");
+            input.type = "file";
+            input.style.display = "none";
+            if (!params["single"]) {
+                input.multiple = "multiple";
+            }
 
-        document.getElementsByTagName('body')[0].appendChild(input);
-        last_input = input;
+            document.getElementsByTagName('body')[0].appendChild(input);
+            last_input = input;
 
-        var promise = new Promise(function (resolve, reject) {
-            input.onchange = function () {
-                if (this.files.length == 0) {
-                    resolve();
-                }
+            var promise = new Promise(function (resolve, reject) {
+                input.onchange = function () {
+                    if (this.files.length == 0) {
+                        resolve();
+                    }
 
-                var count = this.files.length;
-                if (notify !== undefined) notify({status: 'init', count: count});
-                for (var i = 0; i < this.files.length; i++) {
-                    upload.append(path, this.files[i], params, fwWrapper.getContext()).then(function (obj) {
-                        count -= 1;
-                        // Todo notify process
-                        if (notify !== undefined) notify(obj);
-                        if (count == 0) resolve();
-                    });
-                }
-                upload.run();
-            };
-        });
+                    var count = this.files.length;
+                    if (notify !== undefined) notify({status: 'init', count: count});
+                    for (var i = 0; i < this.files.length; i++) {
+                        upload.append(path, this.files[i], params, fwWrapper.getContext()).then(function (obj) {
+                            count -= 1;
+                            // Todo notify process
+                            if (notify !== undefined) notify(obj);
+                            if (count == 0) resolve();
+                        });
+                    }
+                    upload.run();
+                };
+            });
 
-        input.click();
-        return promise;
-    };
+            input.click();
+            return promise;
+        };
+    }
 
 
     upload.append = function (path, file, params, context) {
@@ -525,16 +529,16 @@ module.exports.upload = (function () {
             upload_queue.push(up);
 
             upload.run();
-            setTimeout(function () {
-                var evt = new CustomEvent("upload:retry", {
-                    detail: {
-                        item: up,
-                    }
-                });
-                document.dispatchEvent(evt);
-            }, 10);
-
-
+            if (typeof document !== "undefined") {
+                setTimeout(function () {
+                    var evt = new CustomEvent("upload:retry", {
+                        detail: {
+                            item: up,
+                        }
+                    });
+                    document.dispatchEvent(evt);
+                }, 10);
+            }
         }
         sendprogress();
     };
