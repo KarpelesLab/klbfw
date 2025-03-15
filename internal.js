@@ -28,17 +28,17 @@ function get_timezone_data() {
 
 function rest_url(path, with_token, context) {
     if (!with_token) {
-        if (fwWrapper.getCallUrlPrefix()) return fwWrapper.getCallUrlPrefix() + "/_special/rest/" + path;
-        return "/_special/rest/" + path;
+        if (fwWrapper.getCallUrlPrefix()) return fwWrapper.getCallUrlPrefix() + "/_rest/" + path;
+        return "/_rest/" + path;
     }
     context = context || {};
     var glue = '?';
 
     if (fwWrapper.getSiteStatic()) {
-        var call_url = "/_special/rest/" + path + "?static";
+        var call_url = "/_rest/" + path + "?static";
         glue = '&';
     } else {
-        var call_url = "/_special/rest/" + path;
+        var call_url = "/_rest/" + path;
     }
     if (fwWrapper.getCallUrlPrefix()) call_url = fwWrapper.getCallUrlPrefix() + call_url;
 
@@ -81,7 +81,7 @@ function internal_rest(name, verb, params, context) {
         return fetch(call_url, {method: verb, credentials: 'include', headers: headers});
     }
 
-    if ((FormData != undefined) && (params instanceof FormData)) {
+    if (typeof FormData !== "undefined" && (params instanceof FormData)) {
         return fetch(call_url, {
             method: verb,
             credentials: 'include',
@@ -101,21 +101,35 @@ function internal_rest(name, verb, params, context) {
 }
 
 function checkSupport() {
-    var ok = true;
-    if (!fetch) {
-        console.error("Fetch unsupported");
-        ok = false;
+    var missingFeatures = [];
+    
+    if (typeof fetch === "undefined") {
+        missingFeatures.push("fetch API");
     }
 
     if (!fwWrapper.supported()) {
-        console.error("FW not found");
-        ok = false;
+        missingFeatures.push("Framework wrapper");
     }
-
-    return ok;
+    
+    if (missingFeatures.length > 0) {
+        console.error("Missing required features: " + missingFeatures.join(", "));
+        return false;
+    }
+    
+    return true;
 }
 
 function responseParse(response, resolve, reject) {
+    // Check if response is ok (status 200-299)
+    if (!response.ok) {
+        reject({
+            message: `HTTP Error: ${response.status} ${response.statusText}`,
+            status: response.status, 
+            headers: response.headers
+        });
+        return;
+    }
+    
     var contentType = response.headers.get("content-type");
     if (!contentType || contentType.indexOf("application/json") == -1) {
         response.text().then(

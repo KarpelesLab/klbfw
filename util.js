@@ -21,8 +21,20 @@ function getI18N(language) {
         // a simple GET is straightforward
         fetch("/_special/locale/" + language + ".json")
             .then(function (res) {
-                res.json().then(resolve, reject);
-            }, reject);
+                if (!res.ok) {
+                    reject({
+                        message: `HTTP Error: ${res.status} ${res.statusText}`,
+                        status: res.status
+                    });
+                    return;
+                }
+                res.json().then(resolve, reject).catch(function(error) {
+                    reject(error || new Error('Failed to parse JSON response'));
+                });
+            }, reject)
+            .catch(function(error) {
+                reject(error || new Error('Failed to fetch locale data'));
+            });
     });
 }
 

@@ -5,6 +5,10 @@ module.exports.getCookie = function(cname) {
     if (typeof FW !== "undefined") {
         return FW.cookies[cname];
     }
+    
+    if (typeof document === "undefined") {
+        return undefined;
+    }
 
     var name = cname + "=";
     var decodedCookie = decodeURIComponent(document.cookie);
@@ -24,6 +28,10 @@ module.exports.getCookie = function(cname) {
 module.exports.hasCookie = function(cname) {
     if (typeof FW !== "undefined") {
         return ((FW.cookies.hasOwnProperty(cname)) && (FW.cookies[cname]));
+    }
+    
+    if (typeof document === "undefined") {
+        return false;
     }
 
     var name = cname + "=";
@@ -56,13 +64,18 @@ module.exports.setCookie = function(cname, value, exdays) {
         // ssr mode
         return __platformSetCookie(cname, value, d);
     }
+    
+    if (typeof document === "undefined") {
+        return;
+    }
+    
     if (typeof value === "undefined") {
         // remove cookie
         document.cookie = cname+"=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/";
         return;
     }
 
-    var expires;
+    var expires = "";
     if (d) {
         expires = "expires="+ d.toUTCString();
     }
