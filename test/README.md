@@ -26,11 +26,14 @@ npm test
 
 Integration tests call actual API endpoints. To run them, you need to:
 
-1. Set up environment variables:
+1. Enable integration tests:
 
 ```bash
+# Enable tests
 export RUN_INTEGRATION_TESTS=true
-export API_TOKEN=your_api_token  # Optional, only if needed for authentication
+
+# Optionally specify a different API server URL (default: http://localhost:8080)
+export API_URL=https://your-test-server.com
 ```
 
 2. Run the integration tests:
