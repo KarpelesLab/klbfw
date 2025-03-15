@@ -30,8 +30,7 @@ Integration tests call actual API endpoints. To run them, you need to:
 
 ```bash
 export RUN_INTEGRATION_TESTS=true
-export API_BASE_URL=https://your-api-server.com
-export API_TOKEN=your_api_token
+export API_TOKEN=your_api_token  # Optional, only if needed for authentication
 ```
 
 2. Run the integration tests:

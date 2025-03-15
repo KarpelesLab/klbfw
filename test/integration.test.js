@@ -6,9 +6,8 @@ const upload = require('../upload');
 // Set this flag to true to run integration tests
 const RUN_INTEGRATION_TESTS = process.env.RUN_INTEGRATION_TESTS === 'true';
 
-// Base URL and endpoint configuration
+// API config
 const API_CONFIG = {
-  baseUrl: process.env.API_BASE_URL || 'https://example.com',
   token: process.env.API_TOKEN || ''
 };
 
@@ -30,7 +29,7 @@ describe('API Integration Tests', () => {
     if (!RUN_INTEGRATION_TESTS) {
       console.log('Integration tests skipped. Set RUN_INTEGRATION_TESTS=true to enable.');
     } else {
-      console.log(`Running integration tests against ${API_CONFIG.baseUrl}`);
+      console.log('Running integration tests against the server');
     }
   });
   
