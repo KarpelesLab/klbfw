@@ -210,17 +210,153 @@ describe('API Integration Tests', () => {
     }, 10000);
   });
   
-  // Only run file upload tests if explicitly enabled with an additional flag
-  const uploadTest = (RUN_INTEGRATION_TESTS && process.env.RUN_UPLOAD_TESTS === 'true') ? test : test.skip;
+  // Run upload tests with the same flag as other integration tests
+  const uploadTest = RUN_INTEGRATION_TESTS ? test : test.skip;
   
   describe('File Upload', () => {
-    uploadTest('can upload a file to Misc/Debug:testUpload', async () => {
-      // Create a file-like object for testing
-      // This requires browser environment which is not available in Node.js
-      // So we'll skip this test unless implementing a special case
+    beforeAll(() => {
+      // Browser-specific objects needed for upload functionality in Node environment
+      global.Blob = class Blob {
+        constructor(parts, options) {
+          this.parts = parts;
+          this.options = options;
+          this.size = parts.reduce((acc, part) => acc + (part.length || 0), 0);
+          this.type = options && options.type ? options.type : '';
+        }
+        
+        slice(start, end, contentType) {
+          return new Blob([this.parts[0].slice(start, end)], 
+            { type: contentType || this.type });
+        }
+      };
       
-      console.log('Upload test would go here, but requires browser environment');
-      expect(true).toBe(true);
-    }, 30000);
+      global.File = class File extends Blob {
+        constructor(parts, name, options = {}) {
+          super(parts, options);
+          this.name = name;
+          this.lastModified = options.lastModified || Date.now();
+        }
+      };
+      
+      global.FileReader = class FileReader {
+        constructor() {
+          this.onloadend = null;
+          this.onerror = null;
+          this.result = null;
+        }
+        
+        addEventListener(event, callback) {
+          if (event === 'loadend') {
+            this.onloadend = callback;
+          } else if (event === 'error') {
+            this.onerror = callback;
+          }
+        }
+        
+        readAsArrayBuffer(blob) {
+          // Create real ArrayBuffer from blob data
+          const buffer = Buffer.from(blob.parts[0]).buffer;
+          this.result = buffer;
+          
+          // Call the callback asynchronously
+          setTimeout(() => {
+            if (this.onloadend) {
+              this.onloadend({ target: this });
+            }
+          }, 10);
+        }
+      };
+      
+      global.DOMParser = class DOMParser {
+        parseFromString(string, mimeType) {
+          console.log('Parsing XML:', string);
+          
+          // Parse the actual XML from AWS responses
+          // Simple implementation to extract the UploadId
+          const uploadIdMatch = string.match(/<UploadId>(.*?)<\/UploadId>/);
+          
+          return {
+            querySelector: (selector) => {
+              if (selector === 'UploadId' && uploadIdMatch) {
+                return { innerHTML: uploadIdMatch[1] };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    });
+    
+    uploadTest('can upload a file to Misc/Debug:testUpload', async () => {
+      // We'll use a direct REST API call instead of the full upload system
+      // This allows us to test the upload API without browser-specific features
+      
+      // Create small test content (256 bytes)
+      const testContent = 'a'.repeat(256);
+      const testFileName = 'test-file.txt';
+      const testFileType = 'text/plain';
+      
+      console.log('Starting direct file upload test...');
+      console.log(`Content size: ${testContent.length} bytes`);
+      
+      // First, initiate the upload
+      const uploadInitResponse = await klbfw.rest('Misc/Debug:testUpload', 'POST', {
+        filename: testFileName,
+        size: testContent.length,
+        type: testFileType
+      });
+      
+      console.log('Upload init response:', JSON.stringify(uploadInitResponse, null, 2));
+      
+      // Verify we got a valid response for upload initiation
+      expect(uploadInitResponse).toHaveProperty('result', 'success');
+      expect(uploadInitResponse.data).toBeDefined();
+      
+      // Check if we got a PUT URL for direct upload
+      if (uploadInitResponse.data && uploadInitResponse.data.PUT) {
+        const putUrl = uploadInitResponse.data.PUT;
+        const completeEndpoint = uploadInitResponse.data.Complete;
+        
+        console.log(`Got PUT URL: ${putUrl}`);
+        console.log(`Complete endpoint: ${completeEndpoint}`);
+        
+        // Upload the file directly using fetch
+        const uploadResponse = await fetch(putUrl, {
+          method: 'PUT',
+          body: testContent,
+          headers: {
+            'Content-Type': testFileType
+          }
+        });
+        
+        console.log(`PUT upload status: ${uploadResponse.status}`);
+        expect(uploadResponse.ok).toBe(true);
+        
+        // Complete the upload
+        const completeResponse = await klbfw.rest(completeEndpoint, 'POST', {});
+        console.log('Complete response:', JSON.stringify(completeResponse, null, 2));
+        
+        // Verify completion
+        expect(completeResponse).toHaveProperty('result', 'success');
+        
+        // Check file details and hash if provided
+        if (completeResponse.data && completeResponse.data.file) {
+          const fileInfo = completeResponse.data.file;
+          console.log('File uploaded successfully:');
+          console.log(` - Name: ${fileInfo.name || testFileName}`);
+          console.log(` - Size: ${fileInfo.size || testContent.length}`);
+          console.log(` - Type: ${fileInfo.type || testFileType}`);
+          
+          if (fileInfo.hash) {
+            console.log(` - Hash: ${fileInfo.hash}`);
+            // We could validate the hash here if we knew the expected value
+          }
+        } else {
+          console.log('File upload complete, but detailed file info not returned');
+        }
+      } else {
+        console.log('Upload API did not return PUT URL, cannot proceed with direct upload');
+      }
+    }, 60000); // Increase timeout for real upload
   });
 });
