@@ -4,6 +4,22 @@ Karpeles Lab framework lib
 
 This lib is used on frontend sites to communicate through the KLB API.
 
+## Installation
+
+```bash
+npm install @karpeleslab/klbfw
+```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run tests
+npm test
+```
+
 # API
 
 ## REST API Methods
