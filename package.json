@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:integration": "RUN_INTEGRATION_TESTS=true jest test/integration.test.js --env=node",
+    "test:coverage": "jest --coverage"
   },
   "repository": {
     "type": "git",
