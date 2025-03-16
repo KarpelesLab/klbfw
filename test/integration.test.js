@@ -14,7 +14,7 @@ const internal = require('../internal');
 const fwWrapper = require('../fw-wrapper');
 
 // Define the base URL for API calls - important for Node environment since it requires absolute URLs
-const API_URL = process.env.API_URL || 'https://klb.jp';
+const API_URL = process.env.API_URL || 'https://hub.atonline.com';
 
 // Mock fetch for Node.js environment
 global.fetch = require('node-fetch');
@@ -301,14 +301,14 @@ describe('API Integration Tests', () => {
     
     // For proper integration testing we need to work around the limitations of the Node environment
     // when testing browser-specific functionality, we'll use a simpler approach
-    uploadTest('can upload file to Misc/Debug:testUpload with proper verification', async () => {
+    uploadTest('can upload file to Misc/Debug:testUpload with PUT method (put_only=true)', async () => {
       // Create small test content (256 bytes)
       // This produces a known SHA256 hash: 02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe
       const testContent = 'a'.repeat(256);
       const testFileName = 'test-file.txt';
       const testFileType = 'text/plain';
       
-      console.log('Starting upload test to verify proper protocol handling...');
+      console.log('Starting upload test with PUT method (put_only=true)...');
       console.log(`Content size: ${testContent.length} bytes`);
       
       // First, we initialize the upload by calling the API endpoint
@@ -316,7 +316,8 @@ describe('API Integration Tests', () => {
       const initResponse = await klbfw.rest('Misc/Debug:testUpload', 'POST', {
         filename: testFileName,
         size: testContent.length,
-        type: testFileType
+        type: testFileType,
+        put_only: true // Force PUT method
       });
       
       console.log('Upload init response:', JSON.stringify(initResponse, null, 2));
@@ -380,6 +381,42 @@ describe('API Integration Tests', () => {
         throw new Error('Unknown upload protocol - neither PUT nor AWS multipart supported');
       }
       
+      console.log('\nIMPORTANT: In production code, always use upload.js module for uploads.');
+      console.log('Direct API calls are used in tests only to verify the protocol.');
+    }, 60000); // Increase timeout for real upload
+    
+    uploadTest('can upload file to Misc/Debug:testUpload with AWS method (put_only=false)', async () => {
+      // Create small test content (256 bytes)
+      // This produces a known SHA256 hash: 02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe
+      const testContent = 'a'.repeat(256);
+      const testFileName = 'test-file.txt';
+      const testFileType = 'text/plain';
+      
+      console.log('Starting upload test with AWS method (put_only=false)...');
+      console.log(`Content size: ${testContent.length} bytes`);
+      
+      // First, we initialize the upload by calling the API endpoint
+      console.log('Initializing upload...');
+      const initResponse = await klbfw.rest('Misc/Debug:testUpload', 'POST', {
+        filename: testFileName,
+        size: testContent.length,
+        type: testFileType,
+        put_only: false // Force AWS method
+      });
+      
+      console.log('Upload init response:', JSON.stringify(initResponse, null, 2));
+      expect(initResponse).toHaveProperty('result', 'success');
+      
+      // Verify that AWS upload protocol is used
+      expect(initResponse.data).toHaveProperty('Cloud_Aws_Bucket_Upload__');
+      expect(initResponse.data).toHaveProperty('Bucket_Endpoint');
+      expect(initResponse.data.Bucket_Endpoint).toHaveProperty('Host');
+      expect(initResponse.data.Bucket_Endpoint).toHaveProperty('Region');
+      expect(initResponse.data.Bucket_Endpoint).toHaveProperty('Name');
+      expect(initResponse.data).toHaveProperty('Key');
+      
+      console.log('AWS upload protocol verification successful');
+      console.log('This test confirms the server returns data in the format expected by upload.js');
       console.log('\nIMPORTANT: In production code, always use upload.js module for uploads.');
       console.log('Direct API calls are used in tests only to verify the protocol.');
     }, 60000); // Increase timeout for real upload

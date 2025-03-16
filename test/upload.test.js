@@ -238,7 +238,6 @@ describe('Upload API', () => {
     
     test('upload can process a file with PUT method', async () => {
       // Create test file content - 256 bytes of 'a'
-      // This produces a known SHA256 hash: 02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe
       const testContent = 'a'.repeat(256);
       
       // Create a mock file for upload
@@ -249,9 +248,9 @@ describe('Upload API', () => {
         return new Blob([testContent.slice(start, end)]);
       };
       
-      // Configure fetch mock to return a PUT URL for method 2
+      // Configure fetch mock to return a PUT URL for direct upload
       global.fetch = jest.fn().mockImplementation((url, options) => {
-        if (url.includes('Misc/Debug:testUpload')) {
+        if (url.includes('Misc/Debug:testUpload') && options.method === 'POST') {
           // Initial upload request
           return Promise.resolve({
             ok: true,
@@ -263,12 +262,12 @@ describe('Upload API', () => {
               result: 'success',
               data: {
                 PUT: 'https://example.com/upload',
-                Complete: 'Misc/Debug:testUpload',
+                Complete: 'Cloud/Aws/Bucket/Upload/clabu-acjhff-mhhj-cxzb-lawe-qphwpedu:handleComplete',
                 Blocksize: testContent.length  // Single block for this test
               }
             })
           });
-        } else if (url === 'https://example.com/upload') {
+        } else if (url === 'https://example.com/upload' && options.method === 'PUT') {
           // The PUT request to upload the file
           return Promise.resolve({
             ok: true,
@@ -277,7 +276,7 @@ describe('Upload API', () => {
               get: () => null
             }
           });
-        } else if (url.includes('Misc/Debug:testUpload')) {
+        } else if (url.includes('handleComplete') && options.method === 'POST') {
           // Completion request
           return Promise.resolve({
             ok: true,
@@ -288,12 +287,10 @@ describe('Upload API', () => {
             json: () => Promise.resolve({
               result: 'success',
               data: {
-                file: {
-                  name: 'test-file.txt',
-                  size: testContent.length,
-                  type: 'text/plain',
-                  hash: '02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe'  // SHA256 hash of 256 'a' characters
-                }
+                Blob__: 'blob-n6ipxu-lnbv-ce3g-sdoo-q7sfw6rq',
+                SHA256: '6b5c4d4f9d35fd0bcf2cd8e505cc0af2c5b918c2e9c66c1bc817ded8169bdfe1',
+                Size: '256',
+                Mime: 'text/plain'
               }
             })
           });
@@ -327,10 +324,12 @@ describe('Upload API', () => {
       expect(result.path).toBe('Misc/Debug:testUpload');
       expect(result.status).toBe('complete');
       
-      // Check if the file info includes hash
-      if (result.final && result.final.file) {
-        expect(result.final.file.hash).toBe('02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe');
-      }
+      // Check if the final data from handleComplete is present
+      expect(result.final).toBeDefined();
+      expect(result.final.Blob__).toBe('blob-n6ipxu-lnbv-ce3g-sdoo-q7sfw6rq');
+      expect(result.final.SHA256).toBe('6b5c4d4f9d35fd0bcf2cd8e505cc0af2c5b918c2e9c66c1bc817ded8169bdfe1');
+      expect(result.final.Size).toBe('256');
+      expect(result.final.Mime).toBe('text/plain');
     }, 10000);
     
     test('upload can process a file with AWS multipart method', async () => {
@@ -348,7 +347,7 @@ describe('Upload API', () => {
       
       // Configure fetch mock to return AWS bucket info for method 1
       global.fetch = jest.fn().mockImplementation((url, options) => {
-        if (url.includes('Misc/Debug:testUpload')) {
+        if (url.includes('Misc/Debug:testUpload') && options.method === 'POST') {
           // Initial upload request
           return Promise.resolve({
             ok: true,
@@ -359,7 +358,7 @@ describe('Upload API', () => {
             json: () => Promise.resolve({
               result: 'success',
               data: {
-                Cloud_Aws_Bucket_Upload__: 'test-upload-id',
+                Cloud_Aws_Bucket_Upload__: 'clabu-acjhff-mhhj-cxzb-lawe-qphwpedu',
                 Bucket_Endpoint: {
                   Host: 'example.s3.amazonaws.com',
                   Name: 'test-bucket',
@@ -406,12 +405,10 @@ describe('Upload API', () => {
             json: () => Promise.resolve({
               result: 'success',
               data: {
-                file: {
-                  name: 'test-file.txt',
-                  size: testContent.length,
-                  type: 'text/plain',
-                  hash: '02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe'  // SHA256 hash of 256 'a' characters
-                }
+                Blob__: 'blob-n6ipxu-lnbv-ce3g-sdoo-q7sfw6rq',
+                SHA256: '6b5c4d4f9d35fd0bcf2cd8e505cc0af2c5b918c2e9c66c1bc817ded8169bdfe1',
+                Size: '256',
+                Mime: 'text/plain'
               }
             })
           });
@@ -460,10 +457,10 @@ describe('Upload API', () => {
       expect(result.path).toBe('Misc/Debug:testUpload');
       expect(result.status).toBe('complete');
       
-      // Check if the file info includes hash
-      if (result.final && result.final.file) {
-        expect(result.final.file.hash).toBe('02d7160d77e18c6447be80c2e355c7ed4388545271702c50253b0914c65ce5fe');
-      }
+      // Check if the final data from handleComplete is present
+      expect(result.final).toBeDefined();
+      expect(result.final.Blob__).toBe('blob-n6ipxu-lnbv-ce3g-sdoo-q7sfw6rq');
+      expect(result.final.SHA256).toBe('6b5c4d4f9d35fd0bcf2cd8e505cc0af2c5b918c2e9c66c1bc817ded8169bdfe1');
     }, 10000);
   });
   

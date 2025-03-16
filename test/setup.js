@@ -203,8 +203,8 @@ const resetMocks = () => {
       endpoint = 'Misc/Debug:error';
     } else if (url.includes('Misc/Debug:testUpload')) {
       endpoint = 'Misc/Debug:testUpload';
-    } else if (url.includes('Cloud/Aws/Bucket/Upload')) {
-      // Special case for upload
+    } else if (url.includes('Cloud/Aws/Bucket/Upload') && url.includes('signV4')) {
+      // Special case for AWS signature
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -216,6 +216,26 @@ const resetMocks = () => {
           result: 'success',
           data: {
             authorization: 'AWS4-HMAC-SHA256 test-auth'
+          }
+        }),
+        text: () => Promise.resolve('')
+      });
+    } else if (url.includes('Cloud/Aws/Bucket/Upload') && url.includes('handleComplete')) {
+      // Mock the handleComplete endpoint
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: (header) => header.toLowerCase() === 'content-type' ? 'application/json' : null
+        },
+        json: () => Promise.resolve({
+          result: 'success',
+          data: {
+            Blob__: 'blob-n6ipxu-lnbv-ce3g-sdoo-q7sfw6rq',
+            SHA256: '6b5c4d4f9d35fd0bcf2cd8e505cc0af2c5b918c2e9c66c1bc817ded8169bdfe1',
+            Size: '1075',
+            Mime: 'application/octet-stream'
           }
         }),
         text: () => Promise.resolve('')
@@ -296,7 +316,7 @@ const resetMocks = () => {
             result: 'success',
             data: {
               PUT: 'https://example.com/upload',
-              Complete: 'Misc/Debug:testUpload',
+              Complete: 'Cloud/Aws/Bucket/Upload/clabu-acjhff-mhhj-cxzb-lawe-qphwpedu:handleComplete',
               Blocksize: 5242880,
               id: 'test-file-id',
               name: 'test.jpg',
