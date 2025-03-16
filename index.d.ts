@@ -18,7 +18,7 @@ declare function getLocale(): string;
 declare function getUserGroup(): string | undefined;
 declare function getCurrency(): string;
 declare function getToken(): string | undefined;
-declare function getUrl(): { path: string; full: string };
+declare function getUrl(): { path: string; full: string; host: string; query: string; scheme: string };
 declare function getPath(): string;
 declare function getUuid(): string | undefined;
 declare function getInitialState(): Record<string, any> | undefined;
