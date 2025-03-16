@@ -1,129 +1,161 @@
-'use strict'
-// vim: et:ts=4:sw=4
+'use strict';
+/**
+ * @fileoverview REST API client for KLB Frontend Framework
+ * 
+ * This module provides functions for making REST API calls to KLB backend services.
+ */
 
 const internal = require('./internal');
 const fwWrapper = require('./fw-wrapper');
 
-module.exports.rest = (name, verb, params, context) => {
+/**
+ * Handles platform-specific API calls
+ * @param {string} name - API endpoint name
+ * @param {string} verb - HTTP method (GET, POST, etc.)
+ * @param {Object} params - Request parameters
+ * @param {Object} context - Context object with additional parameters
+ * @returns {Promise} API response promise
+ */
+const handlePlatformCall = (name, verb, params, context) => {
+    // For platform-specific REST implementations
     if (typeof __platformAsyncRest !== "undefined") {
         context = context || {};
-        var ctx_final = fwWrapper.getContext();
-        for (var i in context) ctx_final[i] = context[i];
-        var p1 = new Promise(function(resolve, reject) {
-            __platformAsyncRest(name, verb, params, ctx_final).then(function(result) {
-                if (result.result != "success" && result.result != "redirect") {
-                    reject(result);
+        const ctxFinal = fwWrapper.getContext();
+        
+        // Merge context
+        for (const key in context) {
+            ctxFinal[key] = context[key];
+        }
+        
+        return new Promise((resolve, reject) => {
+            __platformAsyncRest(name, verb, params, ctxFinal)
+                .then(result => {
+                    if (result.result !== "success" && result.result !== "redirect") {
+                        reject(result);
+                    } else {
+                        resolve(result);
+                    }
+                })
+                .catch(error => {
+                    reject(error || new Error('Unknown platform async error'));
+                });
+        });
+    }
+    
+    // For legacy platform REST implementation
+    if (typeof __platformRest !== "undefined") {
+        return new Promise((resolve, reject) => {
+            __platformRest(name, verb, params, (res, err) => {
+                if (err) {
+                    reject(err);
+                } else if (res.result !== "success") {
+                    reject(res);
                 } else {
-                    resolve(result);
+                    resolve(res);
                 }
-            }, reject).catch(function(error) {
-                reject(error || new Error('Unknown platform async error'));
             });
         });
-        return p1;
     }
-    if (typeof __platformRest !== "undefined") {
-      // direct SSR-mode call to rest api
-      return new Promise(function(resolve, reject) {
-        __platformRest(name, verb, params, function(res, err) {
-            if (err) {
-                reject(err);
-            } else if (res.result != "success") {
-                reject(res);
-            } else {
-                resolve(res);
-            }
-        });
-      });
+    
+    return null;
+};
+
+/**
+ * Makes a REST API call
+ * @param {string} name - API endpoint name
+ * @param {string} verb - HTTP method (GET, POST, etc.)
+ * @param {Object} params - Request parameters
+ * @param {Object} context - Context object with additional parameters
+ * @returns {Promise} API response promise
+ */
+const rest = (name, verb, params, context) => {
+    // Try platform-specific REST implementations first
+    const platformResult = handlePlatformCall(name, verb, params, context);
+    if (platformResult) {
+        return platformResult;
     }
 
-    if(!internal.checkSupport()) {
+    // Fall back to standard fetch implementation
+    if (!internal.checkSupport()) {
         return Promise.reject(new Error('Environment not supported'));
     }
 
-    return new Promise(function(resolve, reject) {
-        var restResolved = function(data) {
+    return new Promise((resolve, reject) => {
+        const handleSuccess = data => {
             internal.responseParse(data, resolve, reject);
-        }
-
-        var restRejected = function(data) {
+        };
+        
+        const handleError = data => {
             reject(data);
-        }
+        };
+        
+        const handleException = error => {
+            console.error(error);
+            // TODO: Add proper error logging
+        };
 
-        var restCatch = function(data) {
-            console.error(data);
-            // TODO log errors
-        }
-
-
-        internal.internal_rest(name, verb, params, context)
-            .then(restResolved, restRejected)
-            .catch(restCatch)
+        internal.internalRest(name, verb, params, context)
+            .then(handleSuccess, handleError)
+            .catch(handleException);
     });
 };
 
-module.exports.rest_get = (name, params) => {
-    if (typeof __platformAsyncRest !== "undefined") {
-        return new Promise(function(resolve, reject) {
-            __platformAsyncRest(name, "GET", params).then(function(result) {
-                if (result.result != "success" && result.result != "redirect") {
-                    reject(result);
-                } else {
-                    resolve(result);
-                }
-            }, reject).catch(function(error) {
-                reject(error || new Error('Unknown platform async error'));
-            });
-        });
-    }
-    if (typeof __platformRest !== "undefined") {
-      // direct SSR-mode call to rest api
-      return new Promise(function(resolve, reject) {
-        __platformRest(name, "GET", params, function(res, err) {
-            if (err) {
-                reject(err);
-            } else if (res.result != "success") {
-                reject(res);
-            } else {
-                resolve(res);
-            }
-        });
-      });
+/**
+ * Makes a GET request to the REST API
+ * @param {string} name - API endpoint name
+ * @param {Object} params - Request parameters
+ * @returns {Promise} API response promise
+ */
+const restGet = (name, params) => {
+    // Try platform-specific REST implementations first
+    const platformResult = handlePlatformCall(name, "GET", params);
+    if (platformResult) {
+        return platformResult;
     }
 
-    if(!internal.checkSupport()) {
+    // Fall back to standard fetch implementation
+    if (!internal.checkSupport()) {
         return Promise.reject(new Error('Environment not supported'));
     }
 
     params = params || {};
-    var call_url = internal.rest_url(name, false);
+    let callUrl = internal.buildRestUrl(name, false);
 
     if (params) {
-        // check if params is a json string, or if it needs encoding
+        // Check if params is a JSON string, or if it needs encoding
         if (typeof params === "string") {
-            call_url += "?_=" + encodeURIComponent(params);
+            callUrl += "?_=" + encodeURIComponent(params);
         } else {
-            call_url += "?_=" + encodeURIComponent(JSON.stringify(params));
+            callUrl += "?_=" + encodeURIComponent(JSON.stringify(params));
         }
     }
 
-    return new Promise(function(resolve, reject) {
-        var restResolved = function(data) {
+    return new Promise((resolve, reject) => {
+        const handleSuccess = data => {
             internal.responseParse(data, resolve, reject);
-        }
-
-        var restRejected = function(data) {
+        };
+        
+        const handleError = data => {
             reject(data);
-        }
+        };
+        
+        const handleException = error => {
+            console.error(error);
+            // TODO: Add proper error logging
+        };
 
-        var restCatch = function(data) {
-            console.error(data);
-            // TODO log errors
-        }
-
-        fetch(call_url, {
+        fetch(callUrl, {
             method: 'GET',
             credentials: 'include'
-        }).then(restResolved, restRejected).catch(restCatch);
+        })
+        .then(handleSuccess, handleError)
+        .catch(handleException);
     });
-}
+};
+
+// Export new camelCase API
+module.exports.rest = rest;
+module.exports.restGet = restGet;
+
+// Backward compatibility
+module.exports.rest_get = restGet;

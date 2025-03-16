@@ -1,107 +1,96 @@
 'use strict';
+/**
+ * @fileoverview Internal helpers for the KLB Frontend Framework
+ * 
+ * This module provides internal utility functions for REST API interactions,
+ * timezone handling, and response parsing.
+ */
+
 const fwWrapper = require('./fw-wrapper');
 
-// vim: et:ts=4:sw=4
-
-function get_tz_pad(number, length) {
-    var str = "" + number;
-    while (str.length < length)
+/**
+ * Pads a number with leading zeros
+ * @param {number} number - The number to pad
+ * @param {number} length - The desired length of the result
+ * @returns {string} The padded number
+ */
+const padNumber = (number, length) => {
+    let str = String(number);
+    while (str.length < length) {
         str = '0' + str;
+    }
     return str;
-}
+};
 
-function get_timezone_data() {
-    // grab current offset value & built string
-    var offset = new Date().getTimezoneOffset();
-    offset = ((offset < 0 ? '+' : '-') + // Note the reversed sign!
-        get_tz_pad(parseInt(Math.abs(offset / 60)), 2) +
-        get_tz_pad(Math.abs(offset % 60), 2));
+/**
+ * Gets timezone data in a format suitable for API calls
+ * @returns {string} Formatted timezone string
+ */
+const getTimezoneData = () => {
+    // Grab current offset value & build string
+    const offset = new Date().getTimezoneOffset();
+    const sign = offset < 0 ? '+' : '-'; // Note the reversed sign!
+    const formattedOffset = sign + 
+        padNumber(parseInt(Math.abs(offset / 60)), 2) +
+        padNumber(Math.abs(offset % 60), 2);
 
-    // check if we have intl info
-
-    if (typeof Intl != 'undefined' && (Intl.DateTimeFormat != undefined)) {
-        return Intl.DateTimeFormat().resolvedOptions().timeZone + ";" + offset;
+    // Check if we have Intl info
+    if (typeof Intl !== 'undefined' && Intl.DateTimeFormat !== undefined) {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone + ";" + formattedOffset;
     }
 
-    return offset;
-}
+    return formattedOffset;
+};
 
-function rest_url(path, with_token, context) {
-    if (!with_token) {
+/**
+ * Constructs a REST API URL
+ * @param {string} path - API endpoint path
+ * @param {boolean} withToken - Whether to include authentication token
+ * @param {Object} context - Context object with additional parameters
+ * @returns {string} Constructed URL
+ */
+const buildRestUrl = (path, withToken, context) => {
+    if (!withToken) {
         if (fwWrapper.getCallUrlPrefix()) return fwWrapper.getCallUrlPrefix() + "/_rest/" + path;
         return "/_rest/" + path;
     }
+    
     context = context || {};
-    var glue = '?';
-
+    let glue = '?';
+    
+    let callUrl;
     if (fwWrapper.getSiteStatic()) {
-        var call_url = "/_rest/" + path + "?static";
+        callUrl = "/_rest/" + path + "?static";
         glue = '&';
     } else {
-        var call_url = "/_rest/" + path;
+        callUrl = "/_rest/" + path;
     }
-    if (fwWrapper.getCallUrlPrefix()) call_url = fwWrapper.getCallUrlPrefix() + call_url;
+    
+    if (fwWrapper.getCallUrlPrefix()) {
+        callUrl = fwWrapper.getCallUrlPrefix() + callUrl;
+    }
 
-    // copy context, proceed with overload then add to url
-    var ctx_final = fwWrapper.getContext();
-    for (var i in context) ctx_final[i] = context[i];
-    for (var i in ctx_final) {
-        if (i == "_") continue;
-        call_url = call_url + glue + "_ctx[" + i + "]=" + encodeURIComponent(ctx_final[i]);
+    // Copy context, proceed with overload then add to url
+    const ctxFinal = fwWrapper.getContext();
+    for (const key in context) {
+        ctxFinal[key] = context[key];
+    }
+    
+    for (const key in ctxFinal) {
+        if (key === "_") continue;
+        callUrl = callUrl + glue + "_ctx[" + key + "]=" + encodeURIComponent(ctxFinal[key]);
         glue = '&';
     }
-    return call_url;
-}
+    
+    return callUrl;
+};
 
-function internal_rest(name, verb, params, context) {
-    verb = verb || "GET";
-    params = params || {};
-    context = context || {};
-
-    if (typeof window !== "undefined") {
-        context['t'] = get_timezone_data();
-    }
-    var call_url = rest_url(name, true, context);
-
-    var headers = {};
-    if (fwWrapper.getToken() != '') {
-        headers['Authorization'] = 'Session '+fwWrapper.getToken();
-    }
-
-    if (verb == "GET") {
-        if (params) {
-            // check if params is a json string, or if it needs encoding
-            if (typeof params === "string") {
-                call_url += "&_=" + encodeURIComponent(params);
-            } else {
-                call_url += "&_=" + encodeURIComponent(JSON.stringify(params));
-            }
-        }
-
-        return fetch(call_url, {method: verb, credentials: 'include', headers: headers});
-    }
-
-    if (typeof FormData !== "undefined" && (params instanceof FormData)) {
-        return fetch(call_url, {
-            method: verb,
-            credentials: 'include',
-            body: params,
-            headers: headers
-        });
-    }
-
-    headers['Content-Type'] = 'application/json; charset=utf-8';
-
-    return fetch(call_url, {
-        method: verb,
-        credentials: 'include',
-        body: JSON.stringify(params),
-        headers: headers
-    });
-}
-
-function checkSupport() {
-    var missingFeatures = [];
+/**
+ * Checks if the environment supports required features
+ * @returns {boolean} Whether the environment is supported
+ */
+const checkSupport = () => {
+    const missingFeatures = [];
     
     if (typeof fetch === "undefined") {
         missingFeatures.push("fetch API");
@@ -117,9 +106,86 @@ function checkSupport() {
     }
     
     return true;
-}
+};
 
-function responseParse(response, resolve, reject) {
+/**
+ * Makes an internal REST API call
+ * @param {string} name - API endpoint name
+ * @param {string} verb - HTTP method (GET, POST, etc.)
+ * @param {Object|string} params - Request parameters
+ * @param {Object} context - Context object with additional parameters
+ * @returns {Promise} Fetch promise
+ */
+const internalRest = (name, verb, params, context) => {
+    verb = verb || "GET";
+    params = params || {};
+    context = context || {};
+
+    if (typeof window !== "undefined") {
+        context['t'] = getTimezoneData();
+    }
+    
+    const callUrl = buildRestUrl(name, true, context);
+    const headers = {};
+    
+    if (fwWrapper.getToken() !== '') {
+        headers['Authorization'] = 'Session ' + fwWrapper.getToken();
+    }
+
+    // Handle GET requests
+    if (verb === "GET") {
+        if (params) {
+            // Check if params is a JSON string, or if it needs encoding
+            if (typeof params === "string") {
+                return fetch(callUrl + "&_=" + encodeURIComponent(params), {
+                    method: verb, 
+                    credentials: 'include', 
+                    headers: headers
+                });
+            } else {
+                return fetch(callUrl + "&_=" + encodeURIComponent(JSON.stringify(params)), {
+                    method: verb, 
+                    credentials: 'include', 
+                    headers: headers
+                });
+            }
+        }
+        
+        return fetch(callUrl, {
+            method: verb, 
+            credentials: 'include', 
+            headers: headers
+        });
+    }
+
+    // Handle FormData
+    if (typeof FormData !== "undefined" && (params instanceof FormData)) {
+        return fetch(callUrl, {
+            method: verb,
+            credentials: 'include',
+            body: params,
+            headers: headers
+        });
+    }
+
+    // Handle JSON requests
+    headers['Content-Type'] = 'application/json; charset=utf-8';
+    
+    return fetch(callUrl, {
+        method: verb,
+        credentials: 'include',
+        body: JSON.stringify(params),
+        headers: headers
+    });
+};
+
+/**
+ * Parses API response and resolves/rejects accordingly
+ * @param {Response} response - Fetch Response object
+ * @param {Function} resolve - Promise resolve function
+ * @param {Function} reject - Promise reject function
+ */
+const responseParse = (response, resolve, reject) => {
     // Check if response is ok (status 200-299)
     if (!response.ok) {
         reject({
@@ -130,44 +196,48 @@ function responseParse(response, resolve, reject) {
         return;
     }
     
-    var contentType = response.headers.get("content-type");
-    if (!contentType || contentType.indexOf("application/json") == -1) {
-        response.text().then(
-            function (text) {
-                reject({message: "Not JSON", body: text, headers: response.headers});
-            },
-            reject
-        ).catch(reject);
-
+    const contentType = response.headers.get("content-type");
+    if (!contentType || contentType.indexOf("application/json") === -1) {
+        response.text()
+            .then(text => {
+                reject({
+                    message: "Not JSON", 
+                    body: text, 
+                    headers: response.headers
+                });
+            })
+            .catch(error => reject(error));
         return;
     }
 
-    response.json().then(
-        function (json) {
-            // check for gtag
-            if ((json.gtag) && (typeof window !== "undefined") && (window.gtag)) {
-                json.gtag.map(function (item) { window.gtag.apply(null, item); });
+    response.json()
+        .then(json => {
+            // Check for gtag
+            if (json.gtag && typeof window !== "undefined" && window.gtag) {
+                json.gtag.map(item => window.gtag.apply(null, item));
             }
-            // check for result
-            if (json.result != "success" && json.result != "redirect") {
+            
+            // Check for result
+            if (json.result !== "success" && json.result !== "redirect") {
                 json.headers = response.headers;
                 reject(json);
             } else {
                 resolve(json);
             }
-        },
-        reject
-    ).catch(reject)
-}
+        })
+        .catch(error => reject(error));
+};
 
-module.exports.get_tz_pad = get_tz_pad;
-
-module.exports.get_timezone_data = get_timezone_data;
-
-module.exports.rest_url = rest_url;
-
-module.exports.internal_rest = internal_rest;
-
+// Backward compatibility aliases
+module.exports.get_tz_pad = padNumber;
+module.exports.get_timezone_data = getTimezoneData;
+module.exports.rest_url = buildRestUrl;
+module.exports.internal_rest = internalRest;
 module.exports.checkSupport = checkSupport;
-
 module.exports.responseParse = responseParse;
+
+// New exports with camelCase naming
+module.exports.padNumber = padNumber;
+module.exports.getTimezoneData = getTimezoneData;
+module.exports.buildRestUrl = buildRestUrl;
+module.exports.internalRest = internalRest;

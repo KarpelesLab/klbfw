@@ -6,10 +6,9 @@ const { setupSSRMode, setupClientMode, resetMocks } = require('./setup');
 // Mock the internal module
 jest.mock('../internal', () => ({
   checkSupport: jest.fn().mockReturnValue(true),
+  
+  // Old function names for backward compatibility
   rest_url: jest.fn().mockReturnValue('/_rest/test'),
-  responseParse: jest.fn((response, resolve, reject) => {
-    resolve({ success: true, data: 'test-data' });
-  }),
   internal_rest: jest.fn().mockImplementation(() => {
     return Promise.resolve({
       ok: true,
@@ -19,6 +18,23 @@ jest.mock('../internal', () => ({
       },
       json: jest.fn().mockResolvedValue({ result: 'success', data: 'test-data' })
     });
+  }),
+  
+  // New function names
+  buildRestUrl: jest.fn().mockReturnValue('/_rest/test'),
+  internalRest: jest.fn().mockImplementation(() => {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: {
+        get: jest.fn().mockReturnValue('application/json')
+      },
+      json: jest.fn().mockResolvedValue({ result: 'success', data: 'test-data' })
+    });
+  }),
+  
+  responseParse: jest.fn((response, resolve, reject) => {
+    resolve({ success: true, data: 'test-data' });
   })
 }));
 
@@ -62,9 +78,9 @@ describe('REST Module', () => {
       setupClientMode();
     });
     
-    test('rest uses internal_rest in client mode', async () => {
+    test('rest uses internalRest in client mode', async () => {
       const result = await rest.rest('test', 'GET', {});
-      expect(require('../internal').internal_rest).toHaveBeenCalled();
+      expect(require('../internal').internalRest).toHaveBeenCalled();
       expect(result).toHaveProperty('success', true);
     });
     

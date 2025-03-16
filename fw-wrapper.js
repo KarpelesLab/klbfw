@@ -1,26 +1,221 @@
-module.exports.getPrefix = () => (typeof FW !== "undefined") ? FW.prefix : "";
-module.exports.getSettings = () => (typeof FW !== "undefined") ? FW.settings : {};
-module.exports.getRealm = () => (typeof FW !== "undefined") ? FW.Realm : {};
-module.exports.getLocale = () => (typeof FW !== "undefined") ? FW.Locale : "en-US";
-module.exports.getPath = () => (typeof FW !== "undefined") ? FW.path : window.location.pathname;
-module.exports.getHostname = () => (typeof FW !== "undefined") ? FW.hostname : window.location.hostname;
-module.exports.getCurrency = () => (typeof FW !== "undefined") ? FW.Context.c : "USD";
-module.exports.getContext = () => (typeof FW !== "undefined") ? Object.assign({}, FW.Context) : {};
-module.exports.setContext = (k, v) => { if (typeof FW !== "undefined") FW.Context[k] = v; };
-module.exports.getToken = () => (typeof FW !== "undefined") ? FW.token : undefined;
-module.exports.getRegistry = () => (typeof FW !== "undefined") ? FW.Registry : undefined;
-module.exports.getUrl = () => (typeof FW !== "undefined") ? FW.URL : {path: window.location.pathname, full: window.location.href};
-module.exports.getSiteStatic = () => (typeof FW !== "undefined") ? FW.site_static : true;
-module.exports.getCallUrlPrefix = () => (typeof FW !== "undefined") ? FW.call_url_prefix : "https://hub.atonline.com";
-module.exports.getUuid = () => (typeof FW !== "undefined") ? FW.uuid : undefined;
-module.exports.getInitialState = () => (typeof FW !== "undefined") ? FW.initial : undefined;
-module.exports.supported = () => true;
-module.exports.GET = (typeof FW !== "undefined") ? FW.GET : {};
-module.exports.Get = (key) => {
-    if(key===undefined)
-        return (typeof FW !== "undefined") ? FW.GET : undefined;
+'use strict';
+/**
+ * @fileoverview Framework wrapper for KLB Frontend Framework
+ * 
+ * This module provides a wrapper around the global FW object,
+ * providing safe access to its properties with fallbacks for
+ * environments where FW is not available.
+ */
 
-    return (typeof FW !== "undefined") ? FW.GET[key] : undefined;
-}
-module.exports.flushGet = () => { if (typeof FW !== "undefined") FW.GET = {}; };
-module.exports.getMode = () => (typeof FW !== "undefined") ? FW.mode : "offline";
+/**
+ * Gets a property from the global FW object with fallback
+ * @private
+ * @param {string} property - FW property to retrieve
+ * @param {*} fallback - Fallback value if property is not available
+ * @returns {*} The property value or fallback
+ */
+const getFWProperty = (property, fallback) => {
+    if (typeof FW === "undefined") return fallback;
+    
+    // Handle nested properties (e.g., "Context.c")
+    if (property.includes('.')) {
+        const parts = property.split('.');
+        let obj = FW;
+        
+        for (const part of parts) {
+            if (obj === undefined || obj === null) return fallback;
+            obj = obj[part];
+        }
+        
+        return obj !== undefined ? obj : fallback;
+    }
+    
+    return FW[property] !== undefined ? FW[property] : fallback;
+};
+
+/**
+ * Gets the site prefix
+ * @returns {string} Site prefix
+ */
+const getPrefix = () => getFWProperty('prefix', '');
+
+/**
+ * Gets site settings
+ * @returns {Object} Site settings
+ */
+const getSettings = () => getFWProperty('settings', {});
+
+/**
+ * Gets realm information
+ * @returns {Object} Realm information
+ */
+const getRealm = () => getFWProperty('Realm', {});
+
+/**
+ * Gets the current locale
+ * @returns {string} Current locale
+ */
+const getLocale = () => getFWProperty('Locale', 'en-US');
+
+/**
+ * Gets the current path
+ * @returns {string} Current path
+ */
+const getPath = () => {
+    if (typeof FW !== "undefined") return FW.path;
+    if (typeof window !== "undefined") return window.location.pathname;
+    return '/';
+};
+
+/**
+ * Gets the current hostname
+ * @returns {string} Current hostname
+ */
+const getHostname = () => {
+    if (typeof FW !== "undefined") return FW.hostname;
+    if (typeof window !== "undefined") return window.location.hostname;
+    return '';
+};
+
+/**
+ * Gets the current currency
+ * @returns {string} Current currency code
+ */
+const getCurrency = () => getFWProperty('Context.c', 'USD');
+
+/**
+ * Gets a copy of the current context
+ * @returns {Object} Current context
+ */
+const getContext = () => {
+    if (typeof FW !== "undefined" && FW.Context) {
+        return Object.assign({}, FW.Context);
+    }
+    return {};
+};
+
+/**
+ * Sets a value in the context
+ * @param {string} key - Context key
+ * @param {*} value - Value to set
+ */
+const setContext = (key, value) => {
+    if (typeof FW !== "undefined" && FW.Context) {
+        FW.Context[key] = value;
+    }
+};
+
+/**
+ * Gets the current authentication token
+ * @returns {string|undefined} Authentication token
+ */
+const getToken = () => getFWProperty('token', undefined);
+
+/**
+ * Gets the registry
+ * @returns {Object|undefined} Registry object
+ */
+const getRegistry = () => getFWProperty('Registry', undefined);
+
+/**
+ * Gets URL information
+ * @returns {Object} URL information
+ */
+const getUrl = () => {
+    if (typeof FW !== "undefined") return FW.URL;
+    if (typeof window !== "undefined") {
+        return {
+            path: window.location.pathname,
+            full: window.location.href
+        };
+    }
+    return { path: '/', full: '/' };
+};
+
+/**
+ * Gets site static flag
+ * @returns {boolean} Whether site is static
+ */
+const getSiteStatic = () => getFWProperty('site_static', true);
+
+/**
+ * Gets the API call URL prefix
+ * @returns {string} API call URL prefix
+ */
+const getCallUrlPrefix = () => getFWProperty('call_url_prefix', 'https://hub.atonline.com');
+
+/**
+ * Gets the site UUID
+ * @returns {string|undefined} Site UUID
+ */
+const getUuid = () => getFWProperty('uuid', undefined);
+
+/**
+ * Gets the initial state
+ * @returns {Object|undefined} Initial state
+ */
+const getInitialState = () => getFWProperty('initial', undefined);
+
+/**
+ * Checks if the framework is supported
+ * @returns {boolean} Whether the framework is supported
+ */
+const supported = () => true;
+
+/**
+ * Gets the current GET parameters
+ * @returns {Object} GET parameters
+ */
+const getGET = () => getFWProperty('GET', {});
+
+/**
+ * Gets a specific GET parameter
+ * @param {string} key - Parameter key
+ * @returns {string|undefined} Parameter value
+ */
+const getParam = (key) => {
+    if (key === undefined) {
+        return getGET();
+    }
+    
+    const params = getGET();
+    return params[key];
+};
+
+/**
+ * Flushes GET parameters
+ */
+const flushGet = () => {
+    if (typeof FW !== "undefined") {
+        FW.GET = {};
+    }
+};
+
+/**
+ * Gets the current mode
+ * @returns {string} Current mode
+ */
+const getMode = () => getFWProperty('mode', 'offline');
+
+// Export functions
+module.exports.getPrefix = getPrefix;
+module.exports.getSettings = getSettings;
+module.exports.getRealm = getRealm;
+module.exports.getLocale = getLocale;
+module.exports.getPath = getPath;
+module.exports.getHostname = getHostname;
+module.exports.getCurrency = getCurrency;
+module.exports.getContext = getContext;
+module.exports.setContext = setContext;
+module.exports.getToken = getToken;
+module.exports.getRegistry = getRegistry;
+module.exports.getUrl = getUrl;
+module.exports.getSiteStatic = getSiteStatic;
+module.exports.getCallUrlPrefix = getCallUrlPrefix;
+module.exports.getUuid = getUuid;
+module.exports.getInitialState = getInitialState;
+module.exports.supported = supported;
+module.exports.GET = getGET();
+module.exports.Get = getParam;
+module.exports.flushGet = flushGet;
+module.exports.getMode = getMode;

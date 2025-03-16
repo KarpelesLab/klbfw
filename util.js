@@ -1,26 +1,37 @@
 'use strict';
+/**
+ * @fileoverview Utility functions for KLB Frontend Framework
+ * 
+ * This module provides utility functions for internationalization
+ * and URL prefix handling.
+ */
+
 const internalFW = require('./fw-wrapper');
 
-function getI18N(language) {
+/**
+ * Fetches internationalization data for the specified language
+ * @param {string} language - Language code (e.g., 'en-US')
+ * @returns {Promise<Object>} Promise resolving to internationalization data
+ */
+const getI18N = (language) => {
+    // Use language from parameters or get from framework
     language = language || internalFW.getLocale();
 
+    // Handle platform-specific i18n implementations
     if (typeof __platformAsyncI18N !== "undefined") {
-        // new SSR mode
+        // New SSR mode
         return __platformAsyncI18N(language);
     }
+    
     if (typeof __platformGetI18N !== "undefined") {
-        // we are in SSR mode
-        return new Promise(function (resolve, reject) {
-            resolve(__platformGetI18N(language));
-        });
+        // Legacy SSR mode
+        return Promise.resolve(__platformGetI18N(language));
     }
 
-    // use fetch()
-    // /_special/locale/en-US.json
-    return new Promise(function (resolve, reject) {
-        // a simple GET is straightforward
+    // Use fetch in browser environment
+    return new Promise((resolve, reject) => {
         fetch("/_special/locale/" + language + ".json")
-            .then(function (res) {
+            .then(res => {
                 if (!res.ok) {
                     reject({
                         message: `HTTP Error: ${res.status} ${res.statusText}`,
@@ -28,36 +39,50 @@ function getI18N(language) {
                     });
                     return;
                 }
-                res.json().then(resolve, reject).catch(function(error) {
-                    reject(error || new Error('Failed to parse JSON response'));
-                });
-            }, reject)
-            .catch(function(error) {
+                
+                res.json()
+                    .then(resolve)
+                    .catch(error => {
+                        reject(error || new Error('Failed to parse JSON response'));
+                    });
+            })
+            .catch(error => {
                 reject(error || new Error('Failed to fetch locale data'));
             });
     });
-}
+};
 
-function trimPrefix(url) {
+/**
+ * Extracts prefixes from a URL path
+ * @param {string} url - URL path to process
+ * @returns {Array} Array containing [prefixObject, remainingPath]
+ */
+const trimPrefix = (url) => {
     let currentPrefix = '';
     let currentText = '';
     const prefix = {};
 
     for (let i = 0; i < url.length; i++) {
         const currentChar = url[i];
+        
+        // Skip consecutive slashes
         if (currentChar === '/' && !currentText) continue;
 
-        if (!currentPrefix && currentText.length > 1) { // We are past the prefix
+        // If we have text and not in a prefix, we're done with prefixes
+        if (!currentPrefix && currentText.length > 1) {
             currentText = currentText + url.substr(i);
             break;
         }
 
+        // Handle slash after text
         if (currentChar === '/' && currentText) {
             if (currentText.length === 1) {
+                // This is a prefix indicator (e.g., /l/ for language)
                 currentPrefix = currentText;
                 currentText = '';
                 continue;
             } else {
+                // This is a prefix value (e.g., /l/en-US/)
                 prefix[currentPrefix] = currentText;
                 currentPrefix = '';
                 currentText = '';
@@ -65,12 +90,13 @@ function trimPrefix(url) {
             }
         }
 
-        currentText += currentChar
+        // Add character to current text
+        currentText += currentChar;
     }
 
-    return [prefix, '/' + currentText]
-}
+    return [prefix, '/' + currentText];
+};
 
-
+// Export functions
 module.exports.getI18N = getI18N;
 module.exports.trimPrefix = trimPrefix;

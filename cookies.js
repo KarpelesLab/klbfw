@@ -1,83 +1,136 @@
-'use strict'
-// vim: et:ts=4:sw=4
+'use strict';
+/**
+ * @fileoverview Cookie handling utilities for KLB Frontend Framework
+ * 
+ * This module provides functions for getting, setting, and checking cookies
+ * in both browser and server-side rendering environments.
+ */
 
-module.exports.getCookie = function(cname) {
-    if (typeof FW !== "undefined") {
-        return FW.cookies[cname];
+/**
+ * Parses cookies from document.cookie
+ * @private
+ * @returns {Object} Parsed cookies as key-value pairs
+ */
+const parseCookies = () => {
+    if (typeof document === "undefined") {
+        return {};
     }
     
+    const cookies = {};
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const cookieParts = decodedCookie.split(';');
+    
+    for (const part of cookieParts) {
+        let cookiePart = part.trim();
+        const equalsIndex = cookiePart.indexOf('=');
+        
+        if (equalsIndex > 0) {
+            const name = cookiePart.substring(0, equalsIndex);
+            const value = cookiePart.substring(equalsIndex + 1);
+            cookies[name] = value;
+        }
+    }
+    
+    return cookies;
+};
+
+/**
+ * Gets a cookie value by name
+ * @param {string} name - Cookie name
+ * @returns {string|undefined} Cookie value or undefined if not found
+ */
+const getCookie = (name) => {
+    // Check for framework cookie handling
+    if (typeof FW !== "undefined") {
+        return FW.cookies[name];
+    }
+    
+    // Server-side rendering without framework
     if (typeof document === "undefined") {
         return undefined;
     }
 
-    var name = cname + "=";
-    var decodedCookie = decodeURIComponent(document.cookie);
-    var ca = decodedCookie.split(';');
-    for(var i = 0; i <ca.length; i++) {
-        var c = ca[i];
-        while (c.charAt(0) == ' ') {
-            c = c.substring(1);
-        }
-        if (c.indexOf(name) == 0) {
-            return c.substring(name.length, c.length);
+    // Browser environment without framework
+    const cookieName = name + "=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const cookieParts = decodedCookie.split(';');
+    
+    for (const part of cookieParts) {
+        let c = part.trim();
+        if (c.indexOf(cookieName) === 0) {
+            return c.substring(cookieName.length);
         }
     }
+    
     return undefined;
 };
 
-module.exports.hasCookie = function(cname) {
+/**
+ * Checks if a cookie exists
+ * @param {string} name - Cookie name
+ * @returns {boolean} Whether the cookie exists
+ */
+const hasCookie = (name) => {
+    // Check for framework cookie handling
     if (typeof FW !== "undefined") {
-        return ((FW.cookies.hasOwnProperty(cname)) && (FW.cookies[cname]));
+        return (FW.cookies.hasOwnProperty(name) && FW.cookies[name] !== undefined);
     }
     
+    // Server-side rendering without framework
     if (typeof document === "undefined") {
         return false;
     }
-
-    var name = cname + "=";
-    var decodedCookie = decodeURIComponent(document.cookie);
-    var ca = decodedCookie.split(';');
-    for(var i = 0; i <ca.length; i++) {
-        var c = ca[i];
-        while (c.charAt(0) == ' ') {
-            c = c.substring(1);
-        }
-        if (c.indexOf(name) == 0) {
-            return true;
-        }
-    }
-    return false;
+    
+    // Browser environment without framework
+    return getCookie(name) !== undefined;
 };
 
-module.exports.setCookie = function(cname, value, exdays) {
+/**
+ * Sets a cookie
+ * @param {string} name - Cookie name
+ * @param {string} value - Cookie value
+ * @param {number} exdays - Expiration days (0 or negative for session cookie)
+ */
+const setCookie = (name, value, exdays) => {
+    // Check for framework cookie handling
     if (typeof FW !== "undefined") {
-        // always override value
-        FW.cookies[cname] = value;
+        // Always override value
+        FW.cookies[name] = value;
     }
 
-    var d = undefined;
+    // Calculate expiration if needed
+    let d;
     if (exdays > 0) {
         d = new Date();
-        d.setTime(d.getTime() + (exdays*24*60*60*1000));
-    }
-    if (typeof __platformSetCookie !== "undefined") {
-        // ssr mode
-        return __platformSetCookie(cname, value, d);
+        d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
     }
     
+    // Server-side rendering
+    if (typeof __platformSetCookie !== "undefined") {
+        return __platformSetCookie(name, value, d);
+    }
+    
+    // Server-side without cookie handling
     if (typeof document === "undefined") {
         return;
     }
     
+    // Handle cookie deletion
     if (typeof value === "undefined") {
-        // remove cookie
-        document.cookie = cname+"=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/";
+        document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/";
         return;
     }
 
-    var expires = "";
+    // Set cookie in browser
+    let expires = "";
     if (d) {
-        expires = "expires="+ d.toUTCString();
+        expires = "expires=" + d.toUTCString();
     }
-    document.cookie = cname + "=" + value + ";" + expires + ";path=/;secure;samesite=none";
+    
+    document.cookie = name + "=" + value + ";" + expires + ";path=/;secure;samesite=none";
 };
+
+// Export functions
+module.exports.getCookie = getCookie;
+module.exports.hasCookie = hasCookie;
+module.exports.setCookie = setCookie;
