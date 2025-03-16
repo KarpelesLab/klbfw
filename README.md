@@ -1,13 +1,28 @@
 # klbfw
 
-Karpeles Lab framework lib
+Karpeles Lab Frontend Framework - A JavaScript library for communicating with KLB API.
 
-This lib is used on frontend sites to communicate through the KLB API.
+This library provides a unified interface for interacting with KLB API services from both browser and Node.js environments.
+
+## Features
+
+- **Cross-environment compatibility**: Works in both browser and Node.js environments
+- **REST API client**: Simple and consistent interface for API requests
+- **File upload**: Supports file uploads in any environment with both direct PUT and AWS S3 multipart protocols
+- **Context handling**: Manages authentication, locale, and other contextual information
+- **Cookie management**: Cross-platform cookie handling that works in SSR mode
+- **Internationalization**: Easy access to i18n data
 
 ## Installation
 
 ```bash
 npm install @karpeleslab/klbfw
+```
+
+For Node.js environments with file upload support, install optional dependencies:
+
+```bash
+npm install @karpeleslab/klbfw node-fetch xmldom
 ```
 
 ## Development
@@ -18,7 +33,22 @@ npm install
 
 # Run tests
 npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run integration tests (requires KLB API server)
+npm run test:integration
 ```
+
+## Version 0.2.0 Changes
+
+- **Modern JavaScript**: Refactored to use ES6+ features (arrow functions, const/let, template literals)
+- **Improved Documentation**: Added comprehensive JSDoc comments for all modules and functions
+- **Better Code Organization**: Restructured code for improved readability and maintainability
+- **Cross-Platform Support**: Enhanced environment detection and compatibility
+- **Standardized Naming**: Consistent use of camelCase with backward compatibility for legacy APIs
+- **Enhanced Error Handling**: More robust error handling and reporting
 
 # API
 
@@ -28,13 +58,67 @@ npm test
 
 Performs a REST query and returns a promise to the response.
 
-### rest_get(name, params)
+### rest_get(name, params) / restGet(name, params)
 
 Simplified version of rest() that uses HTTP GET. Takes a REST API endpoint name and optional parameters, returning a Promise with the response.
 
-### upload(api, params, context)
+Note: Starting from version 0.2.0, camelCase method names are also available (e.g., `restGet` instead of `rest_get`).
 
-Perform an upload. This API will show a file selector and allow the user to select one or more files.
+### upload
+
+The upload module provides cross-platform file upload capabilities, supporting both browser and Node.js environments.
+
+#### Browser Usage
+
+```javascript
+// Open file picker and upload selected files
+upload.upload.init('Misc/Debug:testUpload')()
+  .then(result => console.log('Upload complete', result));
+
+// Upload a specific File object
+upload.upload.append('Misc/Debug:testUpload', fileObject)
+  .then(result => console.log('Upload complete', result));
+
+// Track progress
+upload.upload.onprogress = (status) => {
+  console.log('Progress:', status.running.map(i => i.status));
+};
+
+// Cancel an upload
+upload.upload.cancelItem(uploadId);
+```
+
+#### Node.js Usage
+
+```javascript
+// For Node.js environments, first install dependencies:
+// npm install node-fetch xmldom
+
+// Initialize upload with specific file paths
+upload.upload.init('Misc/Debug:testUpload')(['./file1.txt', './file2.jpg'])
+  .then(result => console.log('Upload complete', result));
+
+// Or create a custom file object with path
+const file = {
+  name: 'test.txt',
+  size: 1024,
+  type: 'text/plain',
+  path: '/path/to/file.txt'
+};
+upload.upload.append('Misc/Debug:testUpload', file)
+  .then(result => console.log('Upload complete', result));
+```
+
+#### Upload Management
+
+The upload module provides methods to manage active uploads:
+
+- `upload.getStatus()`: Get current upload status (queue, running, failed)
+- `upload.cancelItem(uploadId)`: Cancel an upload
+- `upload.pauseItem(uploadId)`: Pause an active upload
+- `upload.resumeItem(uploadId)`: Resume a paused upload
+- `upload.retryItem(uploadId)`: Retry a failed upload
+- `upload.deleteItem(uploadId)`: Remove an upload from the queue or failed list
 
 ## Query Parameter Methods
 
@@ -141,3 +225,35 @@ Sets value for a cookie.
 ### hasCookie(cookie)
 
 Checks for presence of a given cookie.
+
+## Cross-Platform Support
+
+As of version 0.2.0, klbfw includes improved environment detection and cross-platform utilities to support both browser and Node.js environments.
+
+### Environment Detection
+
+The library automatically detects the current environment:
+
+```javascript
+const env = {
+  isBrowser: typeof window !== 'undefined' && typeof document !== 'undefined',
+  isNode: typeof process !== 'undefined' && process.versions && process.versions.node
+};
+```
+
+### Cross-Platform Utilities
+
+Several utilities have been designed to work across environments:
+
+- **Fetch**: Uses the browser's native `fetch` or `node-fetch` in Node.js
+- **XML Parsing**: Uses the browser's `DOMParser` or `xmldom` in Node.js
+- **File Reading**: Uses `FileReader` in the browser or `fs` in Node.js
+- **Event Dispatching**: Uses `CustomEvent` in the browser or `EventEmitter` in Node.js
+
+### Node.js Requirements
+
+To use klbfw with full functionality in Node.js, install the optional dependencies:
+
+```bash
+npm install node-fetch xmldom
+```
