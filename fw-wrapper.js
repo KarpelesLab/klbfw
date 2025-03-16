@@ -119,17 +119,26 @@ const getRegistry = () => getFWProperty('Registry', undefined);
 
 /**
  * Gets URL information
- * @returns {Object} URL information
+ * @returns {Object} URL information with path, full, host, query, and scheme properties
  */
 const getUrl = () => {
     if (typeof FW !== "undefined") return FW.URL;
     if (typeof window !== "undefined") {
         return {
             path: window.location.pathname,
-            full: window.location.href
+            full: window.location.href,
+            host: window.location.host,
+            query: window.location.search,
+            scheme: window.location.protocol.replace(':', '')
         };
     }
-    return { path: '/', full: '/' };
+    return { 
+        path: '/', 
+        full: '/', 
+        host: 'localhost',
+        query: '',
+        scheme: 'https'
+    };
 };
 
 /**
