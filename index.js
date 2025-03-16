@@ -13,7 +13,7 @@ const util = require('./util');
 const cookies = require('./cookies');
 
 // Framework wrapper exports
-module.exports.GET = internalFW.GET;
+module.exports.GET = internalFW.GET; // Use the function directly
 module.exports.Get = internalFW.Get;
 module.exports.flushGet = internalFW.flushGet;
 module.exports.getPrefix = internalFW.getPrefix;

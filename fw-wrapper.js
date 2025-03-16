@@ -139,10 +139,28 @@ const getUrl = () => {
 const getSiteStatic = () => getFWProperty('site_static', true);
 
 /**
- * Gets the API call URL prefix
- * @returns {string} API call URL prefix
+ * Gets the API prefix
+ * @returns {string|undefined} API prefix
  */
-const getCallUrlPrefix = () => getFWProperty('call_url_prefix', 'https://hub.atonline.com');
+const getApiPrefix = () => {
+    if (typeof FW !== "undefined") {
+        return FW.api_prefix; // Return undefined if property doesn't exist
+    }
+    return undefined;
+};
+
+/**
+ * Gets the API call URL prefix
+ * @returns {string|undefined} API call URL prefix
+ */
+const getCallUrlPrefix = () => {
+    // In original code, if FW existed but call_url_prefix wasn't set, it would return undefined
+    if (typeof FW !== "undefined") {
+        return FW.call_url_prefix; // Return undefined if property doesn't exist
+    }
+    // Only use fallback in non-browser environments
+    return typeof window === "undefined" ? 'https://hub.atonline.com' : undefined;
+};
 
 /**
  * Gets the site UUID
@@ -215,7 +233,7 @@ module.exports.getCallUrlPrefix = getCallUrlPrefix;
 module.exports.getUuid = getUuid;
 module.exports.getInitialState = getInitialState;
 module.exports.supported = supported;
-module.exports.GET = getGET();
+module.exports.GET = getGET;
 module.exports.Get = getParam;
 module.exports.flushGet = flushGet;
 module.exports.getMode = getMode;

@@ -50,24 +50,36 @@ const getTimezoneData = () => {
  * @returns {string} Constructed URL
  */
 const buildRestUrl = (path, withToken, context) => {
+    // Check for api_prefix
+    const apiPrefixPath = typeof FW !== "undefined" && FW.api_prefix ? 
+        FW.api_prefix + "/_rest/" + path : 
+        "/_rest/" + path;
+    
+    // For non-authenticated requests
     if (!withToken) {
-        if (fwWrapper.getCallUrlPrefix()) return fwWrapper.getCallUrlPrefix() + "/_rest/" + path;
-        return "/_rest/" + path;
+        const prefix = fwWrapper.getCallUrlPrefix();
+        if (prefix) {
+            return prefix + apiPrefixPath;
+        }
+        return apiPrefixPath;
     }
     
     context = context || {};
     let glue = '?';
     
+    // Start building the URL
     let callUrl;
     if (fwWrapper.getSiteStatic()) {
-        callUrl = "/_rest/" + path + "?static";
+        callUrl = apiPrefixPath + "?static";
         glue = '&';
     } else {
-        callUrl = "/_rest/" + path;
+        callUrl = apiPrefixPath;
     }
     
-    if (fwWrapper.getCallUrlPrefix()) {
-        callUrl = fwWrapper.getCallUrlPrefix() + callUrl;
+    // Add call_url_prefix if it exists
+    const prefix = fwWrapper.getCallUrlPrefix();
+    if (prefix) {
+        callUrl = prefix + callUrl;
     }
 
     // Copy context, proceed with overload then add to url
@@ -76,6 +88,7 @@ const buildRestUrl = (path, withToken, context) => {
         ctxFinal[key] = context[key];
     }
     
+    // Add context parameters to URL
     for (const key in ctxFinal) {
         if (key === "_") continue;
         callUrl = callUrl + glue + "_ctx[" + key + "]=" + encodeURIComponent(ctxFinal[key]);
