@@ -35,23 +35,28 @@
  * // For Node.js environments, first install dependencies:
  * // npm install node-fetch xmldom
  * 
- * // Initialize upload with specific file paths
- * upload.upload.init('Misc/Debug:testUpload')(['./file1.txt', './file2.jpg'])
- *   .then(result => console.log('Upload complete', result));
- * 
- * // Or create a custom file object with path
+ * // Create a buffer-based file object for upload
  * const file = {
  *   name: 'test.txt',
- *   size: 1024,
+ *   size: buffer.length,
  *   type: 'text/plain',
- *   path: '/path/to/file.txt'
+ *   content: buffer, // Buffer or ArrayBuffer with file content
+ *   lastModified: Date.now(),
+ *   slice: function(start, end) {
+ *     return {
+ *       content: this.content.slice(start, end)
+ *     };
+ *   }
  * };
+ * 
  * upload.upload.append('Misc/Debug:testUpload', file)
  *   .then(result => console.log('Upload complete', result));
  * ```
  * 
  * @module upload
  */
+
+'use strict';
 
 const rest = require('./rest');
 const fwWrapper = require('./fw-wrapper');
@@ -77,8 +82,6 @@ const env = {
   node: {
     fetch: null,
     xmlParser: null,
-    fs: null,
-    path: null,
     EventEmitter: null,
     eventEmitter: null
   }
@@ -91,8 +94,6 @@ if (env.isNode && !env.isBrowser) {
   try {
     env.node.fetch = require('node-fetch');
     env.node.xmlParser = require('xmldom');
-    env.node.fs = require('fs');
-    env.node.path = require('path');
     env.node.EventEmitter = require('events');
     env.node.eventEmitter = new (env.node.EventEmitter)();
   } catch (e) {
@@ -150,40 +151,73 @@ const utils = {
   },
 
   /**
-   * Read a file as ArrayBuffer in any environment
-   * @param {File|Object} file - File object or file-like object with path
+   * Read file content as ArrayBuffer
+   * Compatible with browser File objects and custom objects with content/slice
+   * 
+   * @param {File|Object} file - File object or file-like object
+   * @param {Object} options - Options for reading (start, end)
    * @param {Function} callback - Callback function(buffer, error)
    */
-  readFileAsArrayBuffer(file, callback) {
-    if (env.isBrowser) {
+  readAsArrayBuffer(file, options, callback) {
+    // Handle case where options is the callback
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    options = options || {};
+    
+    if (env.isBrowser && file instanceof File) {
+      // Browser: use native File API
+      const start = options.start || 0;
+      const end = options.end || file.size;
+      const slice = file.slice(start, end);
+      
       const reader = new FileReader();
       reader.addEventListener('loadend', () => callback(reader.result));
       reader.addEventListener('error', (e) => callback(null, e));
-      reader.readAsArrayBuffer(file);
-    } else if (env.isNode && env.node.fs) {
-      if (file.path) {
-        // Read from filesystem
-        const readStream = env.node.fs.createReadStream(file.path, {
-          start: file.start || 0,
-          end: file.end || undefined
-        });
-        
-        const chunks = [];
-        readStream.on('data', chunk => chunks.push(chunk));
-        readStream.on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          callback(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
-        });
-        readStream.on('error', err => callback(null, err));
-      } else if (file.content) {
-        // Memory buffer
-        const buffer = Buffer.from(file.content);
-        callback(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+      reader.readAsArrayBuffer(slice);
+    } else if (file.content) {
+      // Memory buffer-based file
+      const start = options.start || 0;
+      const end = options.end || file.content.length || file.content.byteLength;
+      let content = file.content;
+      
+      // Handle various content types
+      if (content instanceof ArrayBuffer) {
+        // Already an ArrayBuffer
+        if (start === 0 && end === content.byteLength) {
+          callback(content);
+        } else {
+          callback(content.slice(start, end));
+        }
+      } else if (content.buffer instanceof ArrayBuffer) {
+        // TypedArray (Uint8Array, etc.)
+        callback(content.buffer.slice(start, end));
+      } else if (typeof Buffer !== 'undefined' && content instanceof Buffer) {
+        // Node.js Buffer
+        const arrayBuffer = content.buffer.slice(
+          content.byteOffset + start,
+          content.byteOffset + Math.min(end, content.byteLength)
+        );
+        callback(arrayBuffer);
+      } else if (typeof content === 'string') {
+        // String content - convert to ArrayBuffer
+        const encoder = new TextEncoder();
+        const uint8Array = encoder.encode(content.slice(start, end));
+        callback(uint8Array.buffer);
       } else {
-        callback(null, new Error('No file path or content provided'));
+        callback(null, new Error('Unsupported content type'));
       }
+    } else if (file.slice) {
+      // Object with slice method (custom implementation)
+      const start = options.start || 0;
+      const end = options.end;
+      const slice = file.slice(start, end);
+      
+      // Recursively handle the slice
+      utils.readAsArrayBuffer(slice, callback);
     } else {
-      callback(null, new Error('File reading not available in this environment'));
+      callback(null, new Error('Cannot read file content - no supported method available'));
     }
   },
 
@@ -530,28 +564,11 @@ module.exports.upload = (function () {
         const startByte = partNumber * up.bsize;
         const endByte = Math.min(startByte + up.bsize, up.file.size);
         
-        // Get file slice based on environment
-        let filePart;
-        
-        if (env.isBrowser) {
-            // Browser: use native File.slice
-            filePart = up.file.slice(startByte, endByte);
-        } else if (env.isNode) {
-            // Node.js: create a reference with start/end positions
-            filePart = {
-                path: up.file.path,
-                start: startByte,
-                end: endByte,
-                type: up.file.type,
-                content: up.file.content // For memory buffer based files
-            };
-        } else {
-            handleFailure(up, new Error('Environment not supported'));
-            return;
-        }
-
-        // Read the file part as ArrayBuffer
-        utils.readFileAsArrayBuffer(filePart, (arrayBuffer, error) => {
+        // Read file slice as ArrayBuffer
+        utils.readAsArrayBuffer(up.file, {
+            start: startByte,
+            end: endByte
+        }, (arrayBuffer, error) => {
             if (error) {
                 handleFailure(up, error);
                 return;
@@ -632,7 +649,6 @@ module.exports.upload = (function () {
         })
         .catch(error => handleFailure(up, error));
     }
-
 
     /**
      * Process an upload in progress
@@ -781,8 +797,6 @@ module.exports.upload = (function () {
         sendProgress();
     }
     
-    // No need for backward compatibility for private methods
-    
     /**
      * Get current upload status
      * @returns {Object} Status object with queued, running and failed uploads
@@ -809,44 +823,50 @@ module.exports.upload = (function () {
         upload.run();
     };
 
-    // Environment-specific initialization
-    upload.init = function (path, params, notify) {
-        // perform upload to a given API, for example Drive/Item/<id>:upload
-        // will allow multiple files to be uploaded
+    /**
+     * Initialize uploads in different environments
+     * 
+     * @param {string} path - API path to upload to
+     * @param {Object} params - Upload parameters
+     * @param {Function} notify - Notification callback
+     * @returns {Function} - Function to start uploads
+     */
+    upload.init = function(path, params, notify) {
         params = params || {};
         
-        if (isBrowser) {
+        if (env.isBrowser) {
             // Browser implementation
-            if (last_input != null) {
-                last_input.parentNode.removeChild(last_input);
-                last_input = null;
+            if (state.lastInput !== null) {
+                state.lastInput.parentNode.removeChild(state.lastInput);
+                state.lastInput = null;
             }
 
-            var input = document.createElement("input");
+            const input = document.createElement("input");
             input.type = "file";
             input.style.display = "none";
-            if (!params["single"]) {
+            if (!params.single) {
                 input.multiple = "multiple";
             }
 
             document.getElementsByTagName('body')[0].appendChild(input);
-            last_input = input;
+            state.lastInput = input;
 
-            var promise = new Promise(function (resolve, reject) {
-                input.onchange = function () {
-                    if (this.files.length == 0) {
-                        resolve();
+            const promise = new Promise(function(resolve, reject) {
+                input.onchange = function() {
+                    if (this.files.length === 0) {
+                        return resolve();
                     }
 
-                    var count = this.files.length;
-                    if (notify !== undefined) notify({status: 'init', count: count});
-                    for (var i = 0; i < this.files.length; i++) {
-                        upload.append(path, this.files[i], params, fwWrapper.getContext()).then(function (obj) {
-                            count -= 1;
-                            // Todo notify process
-                            if (notify !== undefined) notify(obj);
-                            if (count == 0) resolve();
-                        });
+                    let count = this.files.length;
+                    if (notify) notify({status: 'init', count: count});
+                    
+                    for (let i = 0; i < this.files.length; i++) {
+                        upload.append(path, this.files[i], params, fwWrapper.getContext())
+                            .then(function(obj) {
+                                count -= 1;
+                                if (notify) notify(obj);
+                                if (count === 0) resolve();
+                            });
                     }
                     upload.run();
                 };
@@ -854,55 +874,58 @@ module.exports.upload = (function () {
 
             input.click();
             return promise;
-        } else if (isNode) {
-            // Node.js implementation
-            return function(filePaths) {
-                // Convert string to array if single file path provided
-                if (typeof filePaths === 'string') {
-                    filePaths = [filePaths];
-                }
-                
-                if (!Array.isArray(filePaths)) {
-                    throw new Error('filePaths must be a string or array of strings');
+        } else {
+            // Non-browser environment
+            return function(files) {
+                // Allow array, single file object, or file content buffer
+                if (!Array.isArray(files)) {
+                    if (files instanceof ArrayBuffer || 
+                        (files.buffer instanceof ArrayBuffer) || 
+                        (typeof Buffer !== 'undefined' && files instanceof Buffer)) {
+                        // If it's a buffer/ArrayBuffer, create a file-like object
+                        files = [{
+                            name: params.filename || 'file.bin',
+                            size: files.byteLength || files.length,
+                            type: params.type || 'application/octet-stream',
+                            lastModified: Date.now(),
+                            content: files
+                        }];
+                    } else {
+                        // Single file object
+                        files = [files];
+                    }
                 }
                 
                 return new Promise(function(resolve, reject) {
-                    const count = filePaths.length;
+                    const count = files.length;
                     if (count === 0) {
                         return resolve();
                     }
                     
-                    if (notify !== undefined) notify({status: 'init', count: count});
+                    if (notify) notify({status: 'init', count: count});
                     
                     let remainingCount = count;
                     
-                    filePaths.forEach(filePath => {
+                    files.forEach(file => {
                         try {
-                            // Get file info
-                            const stats = nodeFs.statSync(filePath);
-                            const fileName = nodePath.basename(filePath);
+                            // Ensure file has required properties
+                            if (!file.name) file.name = 'file.bin';
+                            if (!file.type) file.type = 'application/octet-stream';
+                            if (!file.lastModified) file.lastModified = Date.now();
                             
-                            // Create a file-like object
-                            const file = {
-                                name: fileName,
-                                size: stats.size,
-                                lastModified: stats.mtimeMs,
-                                type: 'application/octet-stream', // Default type
-                                path: filePath, // For Node.js reading
-                                // Mock methods needed by upload.js
-                                slice: function(start, end) {
+                            // Add slice method if not present
+                            if (!file.slice && file.content) {
+                                file.slice = function(start, end) {
                                     return {
-                                        path: filePath,
-                                        start: start,
-                                        end: end || stats.size
+                                        content: this.content.slice(start, end || this.size)
                                     };
-                                }
-                            };
+                                };
+                            }
                             
                             upload.append(path, file, params, fwWrapper.getContext())
                                 .then(function(obj) {
                                     remainingCount -= 1;
-                                    if (notify !== undefined) notify(obj);
+                                    if (notify) notify(obj);
                                     if (remainingCount === 0) resolve();
                                 })
                                 .catch(function(err) {
@@ -920,14 +943,8 @@ module.exports.upload = (function () {
                     upload.run();
                 });
             };
-        } else {
-            // Default implementation for other environments
-            return function() {
-                return Promise.reject(new Error('File upload not supported in this environment'));
-            };
         }
     };
-
 
     /**
      * Add a file to the upload queue
@@ -960,7 +977,6 @@ module.exports.upload = (function () {
             state.queue.push(uploadObject);
         });
     };
-
 
     /**
      * Cancel an upload in progress or in queue
@@ -1104,7 +1120,6 @@ module.exports.upload = (function () {
         // Update progress
         sendProgress();
     };
-
 
     /**
      * Start or continue the upload process
