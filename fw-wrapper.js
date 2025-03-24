@@ -145,7 +145,10 @@ const getUrl = () => {
  * Gets site static flag
  * @returns {boolean} Whether site is static
  */
-const getSiteStatic = () => getFWProperty('site_static', true);
+const getSiteStatic = () => {
+    if (typeof FW === "undefined") return true;
+    return FW.site_static === undefined ? false : FW.site_static;
+};
 
 /**
  * Gets the API prefix
