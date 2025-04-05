@@ -196,7 +196,20 @@ const supported = () => true;
  * Gets the current GET parameters
  * @returns {Object} GET parameters
  */
-const getGET = () => getFWProperty('GET', {});
+const getGET = () => {
+    if (typeof FW !== "undefined") {
+        return FW.GET !== undefined ? FW.GET : {};
+    }
+    if (typeof window !== "undefined") {
+        const params = {};
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.forEach((value, key) => {
+            params[key] = value;
+        });
+        return params;
+    }
+    return {};
+};
 
 /**
  * Gets a specific GET parameter
