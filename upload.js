@@ -38,7 +38,7 @@
  * Node.js usage:
  * ```js
  * // For Node.js environments, first install dependencies:
- * // npm install node-fetch xmldom
+ * // npm install node-fetch @xmldom/xmldom
  * 
  * // Create a buffer-based file object for upload
  * const file = {
@@ -98,12 +98,12 @@ const env = {
 if (env.isNode && !env.isBrowser) {
   try {
     env.node.fetch = require('node-fetch');
-    env.node.xmlParser = require('xmldom');
+    env.node.xmlParser = require('@xmldom/xmldom');
     env.node.EventEmitter = require('events');
     env.node.eventEmitter = new (env.node.EventEmitter)();
   } catch (e) {
     console.warn('Node.js dependencies not available. Some functionality may be limited:', e.message);
-    console.warn('To use in Node.js, install: npm install node-fetch xmldom');
+    console.warn('To use in Node.js, install: npm install node-fetch @xmldom/xmldom');
   }
 }
 

@@ -31,13 +31,13 @@
   },
   "optionalDependencies": {
     "node-fetch": "^2.7.0",
-    "xmldom": "^0.6.0"
+    "@xmldom/xmldom": "~0.8.4"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "node-fetch": "^2.7.0",
-    "xmldom": "^0.6.0"
+    "@xmldom/xmldom": "~0.8.4"
   },
   "jest": {
     "testEnvironment": "jsdom",

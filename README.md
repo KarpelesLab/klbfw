@@ -22,7 +22,7 @@ npm install @karpeleslab/klbfw
 For Node.js environments with file upload support, install optional dependencies:
 
 ```bash
-npm install @karpeleslab/klbfw node-fetch xmldom
+npm install @karpeleslab/klbfw node-fetch @xmldom/xmldom
 ```
 
 ## Development
@@ -97,7 +97,7 @@ upload.cancelItem(uploadId);
 
 ```javascript
 // For Node.js environments, first install dependencies:
-// npm install node-fetch xmldom
+// npm install node-fetch @xmldom/xmldom
 
 // Initialize upload with specific file paths
 upload.init('Misc/Debug:testUpload')(['./file1.txt', './file2.jpg'])
@@ -260,5 +260,5 @@ Several utilities have been designed to work across environments:
 To use klbfw with full functionality in Node.js, install the optional dependencies:
 
 ```bash
-npm install node-fetch xmldom
+npm install node-fetch @xmldom/xmldom
 ```
