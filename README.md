@@ -72,20 +72,25 @@ The upload module provides cross-platform file upload capabilities, supporting b
 
 ```javascript
 // Open file picker and upload selected files
-upload.upload.init('Misc/Debug:testUpload')()
+upload.init('Misc/Debug:testUpload')()
   .then(result => console.log('Upload complete', result));
 
+// Open file picker with custom parameters and notification callback
+upload.init('Support/Ticket:upload', {image_variation: 'alias=mini&strip&scale_crop=300x200'}, (result) => {
+  if (result.status == 'complete') console.log(result.final);
+});
+
 // Upload a specific File object
-upload.upload.append('Misc/Debug:testUpload', fileObject)
+upload.append('Misc/Debug:testUpload', fileObject)
   .then(result => console.log('Upload complete', result));
 
 // Track progress
-upload.upload.onprogress = (status) => {
+upload.onprogress = (status) => {
   console.log('Progress:', status.running.map(i => i.status));
 };
 
 // Cancel an upload
-upload.upload.cancelItem(uploadId);
+upload.cancelItem(uploadId);
 ```
 
 #### Node.js Usage
@@ -95,7 +100,7 @@ upload.upload.cancelItem(uploadId);
 // npm install node-fetch xmldom
 
 // Initialize upload with specific file paths
-upload.upload.init('Misc/Debug:testUpload')(['./file1.txt', './file2.jpg'])
+upload.init('Misc/Debug:testUpload')(['./file1.txt', './file2.jpg'])
   .then(result => console.log('Upload complete', result));
 
 // Or create a custom file object with path
@@ -105,7 +110,7 @@ const file = {
   type: 'text/plain',
   path: '/path/to/file.txt'
 };
-upload.upload.append('Misc/Debug:testUpload', file)
+upload.append('Misc/Debug:testUpload', file)
   .then(result => console.log('Upload complete', result));
 ```
 
