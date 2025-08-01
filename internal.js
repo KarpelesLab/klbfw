@@ -201,6 +201,30 @@ const internalRest = (name, verb, params, context) => {
 const responseParse = (response, resolve, reject) => {
     // Check if response is ok (status 200-299)
     if (!response.ok) {
+        // Check if the error response is JSON
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            // Parse JSON error response
+            response.json()
+                .then(json => {
+                    // Add headers and status to the parsed JSON
+                    json.headers = response.headers;
+                    json.status = response.status;
+                    reject(json);
+                })
+                .catch(error => {
+                    // If JSON parsing fails, reject with basic error info
+                    reject({
+                        message: `HTTP Error: ${response.status} ${response.statusText}`,
+                        status: response.status, 
+                        headers: response.headers,
+                        parseError: error
+                    });
+                });
+            return;
+        }
+        
+        // Non-JSON error response
         reject({
             message: `HTTP Error: ${response.status} ${response.statusText}`,
             status: response.status, 
