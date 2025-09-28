@@ -694,7 +694,7 @@ module.exports.upload = (function () {
         up.done = completedParts;
 
         // Check if all parts are complete
-        if (pendingParts === 0) {
+        if (pendingParts === 0 && completedParts === up.blocks) {
             // All parts complete, finalize the upload
             up.status = "validating";
             
