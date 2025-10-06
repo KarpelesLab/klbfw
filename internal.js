@@ -104,7 +104,7 @@ const buildRestUrl = (path, withToken, context) => {
  */
 const checkSupport = () => {
     const missingFeatures = [];
-    
+
     if (typeof fetch === "undefined") {
         missingFeatures.push("fetch API");
     }
@@ -112,13 +112,77 @@ const checkSupport = () => {
     if (!fwWrapper.supported()) {
         missingFeatures.push("Framework wrapper");
     }
-    
+
     if (missingFeatures.length > 0) {
         console.error("Missing required features: " + missingFeatures.join(", "));
         return false;
     }
-    
+
     return true;
+};
+
+/**
+ * Checks if token needs refresh and refreshes if necessary
+ * @returns {Promise<void>} Resolves when check/refresh is complete
+ */
+const checkAndRefreshToken = () => {
+    const tokenExp = fwWrapper.getTokenExp();
+
+    // If token_exp is not defined, no refresh needed
+    if (tokenExp === undefined) {
+        return Promise.resolve();
+    }
+
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    // Check if token expires within 5 minutes
+    if (tokenExp - now <= fiveMinutes) {
+        // Need to refresh token
+        const callUrl = buildRestUrl('_special/token.json', true);
+        const headers = {};
+
+        if (fwWrapper.getToken() !== '') {
+            headers['Authorization'] = 'Session ' + fwWrapper.getToken();
+        }
+
+        return fetch(callUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: headers
+        })
+        .then(response => {
+            if (!response.ok) {
+                // API returned an error, give up by setting token_exp to undefined
+                fwWrapper.setToken(fwWrapper.getToken(), undefined);
+                return;
+            }
+
+            const contentType = response.headers.get('content-type');
+            if (!contentType || contentType.indexOf('application/json') === -1) {
+                // Not JSON response, give up
+                fwWrapper.setToken(fwWrapper.getToken(), undefined);
+                return;
+            }
+
+            return response.json();
+        })
+        .then(json => {
+            if (json && json.token && json.token_exp) {
+                // Update token and token_exp
+                fwWrapper.setToken(json.token, json.token_exp);
+            } else {
+                // Invalid response, give up
+                fwWrapper.setToken(fwWrapper.getToken(), undefined);
+            }
+        })
+        .catch(() => {
+            // Error occurred, give up by setting token_exp to undefined
+            fwWrapper.setToken(fwWrapper.getToken(), undefined);
+        });
+    }
+
+    return Promise.resolve();
 };
 
 /**
@@ -137,58 +201,61 @@ const internalRest = (name, verb, params, context) => {
     if (typeof window !== "undefined") {
         context['t'] = getTimezoneData();
     }
-    
-    const callUrl = buildRestUrl(name, true, context);
-    const headers = {};
-    
-    if (fwWrapper.getToken() !== '') {
-        headers['Authorization'] = 'Session ' + fwWrapper.getToken();
-    }
 
-    // Handle GET requests
-    if (verb === "GET") {
-        if (params) {
-            // Check if params is a JSON string, or if it needs encoding
-            if (typeof params === "string") {
-                return fetch(callUrl + "&_=" + encodeURIComponent(params), {
-                    method: verb, 
-                    credentials: 'include', 
-                    headers: headers
-                });
-            } else {
-                return fetch(callUrl + "&_=" + encodeURIComponent(JSON.stringify(params)), {
-                    method: verb, 
-                    credentials: 'include', 
-                    headers: headers
-                });
-            }
+    // Check and refresh token if needed before making the request
+    return checkAndRefreshToken().then(() => {
+        const callUrl = buildRestUrl(name, true, context);
+        const headers = {};
+
+        if (fwWrapper.getToken() !== '') {
+            headers['Authorization'] = 'Session ' + fwWrapper.getToken();
         }
-        
-        return fetch(callUrl, {
-            method: verb, 
-            credentials: 'include', 
-            headers: headers
-        });
-    }
 
-    // Handle FormData
-    if (typeof FormData !== "undefined" && (params instanceof FormData)) {
+        // Handle GET requests
+        if (verb === "GET") {
+            if (params) {
+                // Check if params is a JSON string, or if it needs encoding
+                if (typeof params === "string") {
+                    return fetch(callUrl + "&_=" + encodeURIComponent(params), {
+                        method: verb,
+                        credentials: 'include',
+                        headers: headers
+                    });
+                } else {
+                    return fetch(callUrl + "&_=" + encodeURIComponent(JSON.stringify(params)), {
+                        method: verb,
+                        credentials: 'include',
+                        headers: headers
+                    });
+                }
+            }
+
+            return fetch(callUrl, {
+                method: verb,
+                credentials: 'include',
+                headers: headers
+            });
+        }
+
+        // Handle FormData
+        if (typeof FormData !== "undefined" && (params instanceof FormData)) {
+            return fetch(callUrl, {
+                method: verb,
+                credentials: 'include',
+                body: params,
+                headers: headers
+            });
+        }
+
+        // Handle JSON requests
+        headers['Content-Type'] = 'application/json; charset=utf-8';
+
         return fetch(callUrl, {
             method: verb,
             credentials: 'include',
-            body: params,
+            body: JSON.stringify(params),
             headers: headers
         });
-    }
-
-    // Handle JSON requests
-    headers['Content-Type'] = 'application/json; charset=utf-8';
-    
-    return fetch(callUrl, {
-        method: verb,
-        credentials: 'include',
-        body: JSON.stringify(params),
-        headers: headers
     });
 };
 

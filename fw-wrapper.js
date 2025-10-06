@@ -112,6 +112,24 @@ const setContext = (key, value) => {
 const getToken = () => getFWProperty('token', undefined);
 
 /**
+ * Gets the current token expiration time
+ * @returns {number|undefined} Token expiration time in milliseconds
+ */
+const getTokenExp = () => getFWProperty('token_exp', undefined);
+
+/**
+ * Sets the authentication token and its expiration time
+ * @param {string} token - New token value
+ * @param {number|undefined} tokenExp - Token expiration time in milliseconds
+ */
+const setToken = (token, tokenExp) => {
+    if (typeof FW !== 'undefined') {
+        FW.token = token;
+        FW.token_exp = tokenExp;
+    }
+};
+
+/**
  * Gets the registry
  * @returns {Object|undefined} Registry object
  */
@@ -251,6 +269,8 @@ module.exports.getCurrency = getCurrency;
 module.exports.getContext = getContext;
 module.exports.setContext = setContext;
 module.exports.getToken = getToken;
+module.exports.getTokenExp = getTokenExp;
+module.exports.setToken = setToken;
 module.exports.getRegistry = getRegistry;
 module.exports.getUrl = getUrl;
 module.exports.getSiteStatic = getSiteStatic;
