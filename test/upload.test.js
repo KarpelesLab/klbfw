@@ -518,6 +518,161 @@ describe('Upload API', () => {
     }, 15000);
   });
   
+  describe('Single-block PUT upload regression test', () => {
+    beforeEach(() => {
+      setupClientMode();
+      resetMocks();
+    });
+
+    test('should not call Complete before PUT is performed for single-block uploads', async () => {
+      // Create a 65536 bytes file
+      const testContent = Buffer.alloc(65536);
+      for (let i = 0; i < testContent.length; i++) {
+        testContent[i] = Math.floor(Math.random() * 256);
+      }
+
+      // Create a mock file for upload
+      const testFile = {
+        name: 'test-65536.bin',
+        size: testContent.length,
+        type: 'application/octet-stream',
+        lastModified: Date.now(),
+        content: testContent,
+        slice: function(start, end) {
+          return {
+            content: this.content.slice(start, end)
+          };
+        }
+      };
+
+      // Track the order of API calls
+      const apiCalls = [];
+
+      // Configure fetch mock
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          apiCalls.push('initUpload');
+          // Initial upload request - returns only PUT URL (no AWS info)
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => 'application/json'
+            },
+            json: () => Promise.resolve({
+              result: 'success',
+              request_id: 'aa648af4-9355-425b-a4be-116e9bb3b564',
+              time: 0.1258690357208252,
+              data: {
+                PUT: 'https://example.com/_special/rest/Blob/Source/Binary/Upload/NKX83J4XWTBBMVW56M5CMVJLXEDS84JBDNM9V6W4KG26MJEL86W9FRZH3562MNTK:upload',
+                Complete: 'Blob/Source/Binary/Upload/NKX83J4XWTBBMVW56M5CMVJLXEDS84JBDNM9V6W4KG26MJEL86W9FRZH3562MNTK:handleComplete'
+              },
+              access: {
+                'llmdl-72upzx-e4on-gq7g-raad-h4cx2klq': {
+                  required: 'W',
+                  available: 'O'
+                }
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('upload') && options?.method === 'PUT') {
+          apiCalls.push('PUT');
+          // The PUT request to upload the file
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => null
+            },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete') && options?.method === 'POST') {
+          apiCalls.push('Complete');
+          // Completion request
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => 'application/json'
+            },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                Blob__: 'blob-test-12345',
+                SHA256: 'test-hash',
+                Size: '65536',
+                Mime: 'application/octet-stream'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      // Override FileReader for this test
+      global.FileReader = class FileReader {
+        constructor() {
+          this.result = null;
+          this.onloadend = null;
+          this.onerror = null;
+        }
+
+        addEventListener(event, callback) {
+          if (event === 'loadend') {
+            this.onloadend = callback;
+          } else if (event === 'error') {
+            this.onerror = callback;
+          }
+        }
+
+        readAsArrayBuffer(blob) {
+          // Simulate async file reading with actual content
+          setTimeout(() => {
+            this.result = testContent.buffer.slice(
+              testContent.byteOffset,
+              testContent.byteOffset + testContent.byteLength
+            );
+            if (this.onloadend) {
+              this.onloadend();
+            }
+          }, 10);
+        }
+      };
+
+      // Add the file to the upload queue
+      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+
+      // Start the upload process
+      upload.upload.run();
+
+      // Wait for upload to complete with timeout
+      const timeoutPromise = new Promise((resolve, reject) => {
+        setTimeout(() => reject(new Error('Upload timeout')), 5000);
+      });
+
+      try {
+        await Promise.race([uploadPromise, timeoutPromise]);
+
+        // Verify the order of API calls
+        expect(apiCalls).toEqual(['initUpload', 'PUT', 'Complete']);
+
+        // Verify that PUT was called before Complete
+        const putIndex = apiCalls.indexOf('PUT');
+        const completeIndex = apiCalls.indexOf('Complete');
+        expect(putIndex).toBeGreaterThanOrEqual(0);
+        expect(completeIndex).toBeGreaterThanOrEqual(0);
+        expect(putIndex).toBeLessThan(completeIndex);
+      } catch (error) {
+        // If there's a timeout or other error, check what calls were made
+        console.log('API calls made:', apiCalls);
+        throw error;
+      }
+    });
+  });
+
   describe('Upload Management Functions', () => {
     beforeEach(() => {
       setupClientMode();
