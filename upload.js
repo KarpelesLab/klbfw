@@ -459,7 +459,7 @@ module.exports.upload = (function () {
         params.filename = up.file.name;
         params.size = up.file.size;
         params.lastModified = up.file.lastModified / 1000;
-        params.type = up.file.type;
+        params.type = up.file.type || "application/octet-stream";
         
         // Initialize upload with the server
         rest.rest(up.path, "POST", params, up.context)
@@ -497,7 +497,7 @@ module.exports.upload = (function () {
             "POST",
             "uploads=",
             "",
-            {"Content-Type": up.file.type, "X-Amz-Acl": "private"},
+            {"Content-Type": up.file.type || "application/octet-stream", "X-Amz-Acl": "private"},
             up.context
         )
         .then(response => response.text())
@@ -609,9 +609,18 @@ module.exports.upload = (function () {
             up.context
         )
         .then(response => {
+            // Verify the response is successful
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             // Store ETag for this part (needed for completion)
-            up.b[partNumber] = response.headers.get("ETag");
-            
+            const etag = response.headers.get("ETag");
+            // Read response body to ensure request completed
+            return response.text().then(() => etag);
+        })
+        .then(etag => {
+            up.b[partNumber] = etag;
+
             // Update progress and continue processing
             sendProgress();
             upload.run();
@@ -629,7 +638,7 @@ module.exports.upload = (function () {
     function uploadPutPart(up, partNumber, startByte, data) {
         // Set up headers
         const headers = {
-            "Content-Type": up.file.type
+            "Content-Type": up.file.type || "application/octet-stream"
         };
         
         // Add Content-Range header for multipart PUT
@@ -645,9 +654,17 @@ module.exports.upload = (function () {
             headers: headers,
         })
         .then(response => {
+            // Verify the response is successful
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            // Read response body to ensure request completed
+            return response.text();
+        })
+        .then(() => {
             // Mark part as done
             up.b[partNumber] = "done";
-            
+
             // Update progress and continue processing
             sendProgress();
             upload.run();

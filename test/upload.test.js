@@ -809,4 +809,227 @@ describe('Upload API', () => {
       }
     });
   });
+
+  describe('HTTP Error Handling', () => {
+    beforeEach(() => {
+      setupClientMode();
+      resetMocks();
+    });
+
+    test('should handle HTTP 500 error on PUT upload', async () => {
+      // Create a small test file
+      const testContent = Buffer.alloc(1024);
+      for (let i = 0; i < testContent.length; i++) {
+        testContent[i] = i % 256;
+      }
+
+      const testFile = {
+        name: 'test-error.bin',
+        size: testContent.length,
+        type: 'application/octet-stream',
+        lastModified: Date.now(),
+        content: testContent,
+        slice: function(start, end) {
+          return {
+            content: this.content.slice(start, end)
+          };
+        }
+      };
+
+      // Configure fetch mock to return error on PUT
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          // Initial upload request - returns PUT URL
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => 'application/json'
+            },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Source/Binary/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('upload') && options?.method === 'PUT') {
+          // The PUT request returns HTTP 500 error
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: {
+              get: () => null
+            },
+            text: () => Promise.resolve('Server error')
+          });
+        }
+
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      // Override FileReader for this test
+      global.FileReader = class FileReader {
+        constructor() {
+          this.result = null;
+          this.onloadend = null;
+          this.onerror = null;
+        }
+
+        addEventListener(event, callback) {
+          if (event === 'loadend') {
+            this.onloadend = callback;
+          } else if (event === 'error') {
+            this.onerror = callback;
+          }
+        }
+
+        readAsArrayBuffer(blob) {
+          setTimeout(() => {
+            this.result = testContent.buffer.slice(
+              testContent.byteOffset,
+              testContent.byteOffset + testContent.byteLength
+            );
+            if (this.onloadend) {
+              this.onloadend();
+            }
+          }, 10);
+        }
+      };
+
+      // Add the file to the upload queue
+      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+
+      // Start the upload process
+      upload.upload.run();
+
+      // The upload should fail, not complete
+      await expect(uploadPromise).rejects.toThrow();
+    });
+
+    test('should handle HTTP 403 error on AWS multipart upload', async () => {
+      // Create a small test file
+      const testContent = Buffer.alloc(1024);
+      for (let i = 0; i < testContent.length; i++) {
+        testContent[i] = i % 256;
+      }
+
+      const testFile = {
+        name: 'test-error-aws.bin',
+        size: testContent.length,
+        type: 'application/octet-stream',
+        lastModified: Date.now(),
+        content: testContent,
+        slice: function(start, end) {
+          return {
+            content: this.content.slice(start, end)
+          };
+        }
+      };
+
+      // Configure fetch mock to return AWS info and then error on part upload
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          // Initial upload request - returns AWS info
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => 'application/json'
+            },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                Cloud_Aws_Bucket_Upload__: 'clabu-test-id',
+                Bucket_Endpoint: {
+                  Host: 'example.s3.amazonaws.com',
+                  Name: 'test-bucket',
+                  Region: 'us-east-1'
+                },
+                Key: 'uploads/test-error-aws.bin'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('Cloud/Aws/Bucket/Upload') && url.includes('signV4')) {
+          // AWS signature
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: {
+              get: () => 'application/json'
+            },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                authorization: 'AWS4-HMAC-SHA256 Credential=test/example/s3/aws4_request'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('uploads=')) {
+          // AWS multipart init
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('<InitiateMultipartUploadResult><UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>')
+          });
+        } else if (url.includes('partNumber=') && url.includes('uploadId=')) {
+          // Part upload returns HTTP 403 error
+          return Promise.resolve({
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+            headers: {
+              get: () => null
+            },
+            text: () => Promise.resolve('Access denied')
+          });
+        }
+
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      // Override FileReader for this test
+      global.FileReader = class FileReader {
+        constructor() {
+          this.result = null;
+          this.onloadend = null;
+          this.onerror = null;
+        }
+
+        addEventListener(event, callback) {
+          if (event === 'loadend') {
+            this.onloadend = callback;
+          } else if (event === 'error') {
+            this.onerror = callback;
+          }
+        }
+
+        readAsArrayBuffer(blob) {
+          setTimeout(() => {
+            this.result = testContent.buffer.slice(
+              testContent.byteOffset,
+              testContent.byteOffset + testContent.byteLength
+            );
+            if (this.onloadend) {
+              this.onloadend();
+            }
+          }, 10);
+        }
+      };
+
+      // Add the file to the upload queue
+      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+
+      // Start the upload process
+      upload.upload.run();
+
+      // The upload should fail, not complete
+      await expect(uploadPromise).rejects.toThrow();
+    });
+  });
 });
