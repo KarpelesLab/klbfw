@@ -32,6 +32,7 @@ declare function setCookie(name: string, value: string, expires?: Date | number,
 declare function rest(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<any>;
 declare function rest_get(name: string, params?: Record<string, any>): Promise<any>; // Backward compatibility
 declare function restGet(name: string, params?: Record<string, any>): Promise<any>;
+declare function restSSE(name: string, method: 'GET', params?: Record<string, any>, context?: Record<string, any>): EventSource;
 
 // Upload module types
 interface UploadOptions {
@@ -75,6 +76,7 @@ export {
   rest,
   rest_get,
   restGet,
+  restSSE,
   upload,
   getI18N,
   trimPrefix

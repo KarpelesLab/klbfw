@@ -42,6 +42,7 @@ module.exports.setCookie = cookies.setCookie;
 module.exports.rest = rest.rest;
 module.exports.rest_get = rest.rest_get; // Backward compatibility
 module.exports.restGet = rest.restGet;   // New camelCase name
+module.exports.restSSE = rest.restSSE;
 
 // Upload module exports
 module.exports.upload = upload.upload;
