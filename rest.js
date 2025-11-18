@@ -204,6 +204,12 @@ const restSSE = (name, method, params, context) => {
         withCredentials: true
     });
 
+    // Handle errors and server-side closures
+    eventSource.onerror = (error) => {
+        console.error('EventSource error:', error);
+        eventSource.close();
+    };
+
     return eventSource;
 };
 
