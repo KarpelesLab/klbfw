@@ -1,6 +1,6 @@
 {
   "name": "@karpeleslab/klbfw",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Frontend Framework",
   "main": "index.js",
   "types": "index.d.ts",
