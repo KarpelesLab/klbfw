@@ -285,6 +285,11 @@ const utils = {
  * @param {Object} [params={}] - Additional parameters to send with the upload.
  *   Can include `filename` and `type` to override defaults.
  * @param {Object} [context=null] - Request context (uses default context if not provided)
+ * @param {Object} [options={}] - Upload options
+ * @param {Function} [options.onProgress] - Progress callback(progress) where progress is 0-1
+ * @param {Function} [options.onError] - Error callback(error, context). Can return a Promise
+ *   that, if resolved, will cause the failed operation to be retried. Context contains
+ *   { phase, blockNum, attempt } for block uploads or { phase, attempt } for other operations.
  * @returns {Promise<Object>} - Resolves with the upload result data
  *
  * @example
@@ -296,17 +301,30 @@ const utils = {
  * });
  *
  * @example
- * // Upload with defaults
- * const result = await uploadFile('Misc/Debug:testUpload', buffer);
+ * // Upload with progress and error handling
+ * const result = await uploadFile('Misc/Debug:testUpload', buffer, 'POST', {
+ *   filename: 'large-file.bin'
+ * }, null, {
+ *   onProgress: (progress) => console.log(`${Math.round(progress * 100)}%`),
+ *   onError: async (error, ctx) => {
+ *     console.log(`Error in ${ctx.phase}, attempt ${ctx.attempt}:`, error.message);
+ *     if (ctx.attempt < 3) {
+ *       await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
+ *       return; // Resolve to trigger retry
+ *     }
+ *     throw error; // Give up after 3 attempts
+ *   }
+ * });
  *
  * @example
  * // Upload a File object (browser)
  * const result = await uploadFile('Misc/Debug:testUpload', fileInput.files[0]);
  */
-async function uploadFile(api, buffer, method, params, context) {
+async function uploadFile(api, buffer, method, params, context, options) {
     // Handle default values
     method = method || 'POST';
     params = params || {};
+    options = options || {};
 
     // Get context from framework if not provided, and add available values
     if (!context) {
@@ -401,12 +419,12 @@ async function uploadFile(api, buffer, method, params, context) {
 
     // Method 1: AWS signed multipart upload
     if (data.Cloud_Aws_Bucket_Upload__) {
-        return doAwsUpload(fileObj, data, context);
+        return doAwsUpload(fileObj, data, context, options);
     }
 
     // Method 2: Direct PUT upload
     if (data.PUT) {
-        return doPutUpload(fileObj, data, context);
+        return doPutUpload(fileObj, data, context, options);
     }
 
     throw new Error('Invalid upload response format: no upload method available');
@@ -416,26 +434,70 @@ async function uploadFile(api, buffer, method, params, context) {
  * Perform a direct PUT upload (simple upload method)
  * @private
  */
-async function doPutUpload(file, uploadInfo, context) {
+async function doPutUpload(file, uploadInfo, context, options) {
     const blockSize = uploadInfo.Blocksize || file.size;
     const blocks = Math.ceil(file.size / blockSize);
+    const { onProgress, onError } = options;
 
     // Upload blocks with concurrency limit
     const maxConcurrent = 3;
+    let completedBlocks = 0;
 
     // Process blocks in batches
     for (let i = 0; i < blocks; i += maxConcurrent) {
         const batch = [];
         for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
-            batch.push(uploadPutBlock(file, uploadInfo, j, blockSize));
+            batch.push(
+                uploadPutBlockWithRetry(file, uploadInfo, j, blockSize, onError)
+                    .then(() => {
+                        completedBlocks++;
+                        if (onProgress) {
+                            onProgress(completedBlocks / blocks);
+                        }
+                    })
+            );
         }
 
         await Promise.all(batch);
     }
 
-    // All blocks done, call completion
-    const completeResponse = await rest.rest(uploadInfo.Complete, 'POST', {}, context);
-    return completeResponse.data;
+    // All blocks done, call completion with retry support
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            const completeResponse = await rest.rest(uploadInfo.Complete, 'POST', {}, context);
+            return completeResponse.data;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'complete', attempt });
+                // If onError resolves, retry
+                continue;
+            }
+            throw error;
+        }
+    }
+}
+
+/**
+ * Upload a single block via PUT with retry support
+ * @private
+ */
+async function uploadPutBlockWithRetry(file, uploadInfo, blockNum, blockSize, onError) {
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            return await uploadPutBlock(file, uploadInfo, blockNum, blockSize);
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'upload', blockNum, attempt });
+                // If onError resolves, retry
+                continue;
+            }
+            throw error;
+        }
+    }
 }
 
 /**
@@ -475,61 +537,128 @@ async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
  * Perform an AWS multipart upload
  * @private
  */
-async function doAwsUpload(file, uploadInfo, context) {
+async function doAwsUpload(file, uploadInfo, context, options) {
+    const { onProgress, onError } = options;
+
     // Calculate optimal block size (min 5MB for AWS, target ~10k parts)
     let blockSize = Math.ceil(file.size / 10000);
     if (blockSize < 5242880) blockSize = 5242880;
 
     const blocks = Math.ceil(file.size / blockSize);
 
-    // Initialize multipart upload
-    const initResponse = await awsReq(
-        uploadInfo,
-        'POST',
-        'uploads=',
-        '',
-        { 'Content-Type': file.type || 'application/octet-stream', 'X-Amz-Acl': 'private' },
-        context
-    );
-    const initXml = await initResponse.text();
-    const dom = utils.parseXML(initXml);
-    const uploadId = dom.querySelector('UploadId').innerHTML;
+    // Initialize multipart upload with retry support
+    let uploadId;
+    let initAttempt = 0;
+    while (true) {
+        initAttempt++;
+        try {
+            const initResponse = await awsReq(
+                uploadInfo,
+                'POST',
+                'uploads=',
+                '',
+                { 'Content-Type': file.type || 'application/octet-stream', 'X-Amz-Acl': 'private' },
+                context
+            );
+            const initXml = await initResponse.text();
+            const dom = utils.parseXML(initXml);
+            uploadId = dom.querySelector('UploadId').innerHTML;
+            break;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'init', attempt: initAttempt });
+                continue;
+            }
+            throw error;
+        }
+    }
 
     // Upload all parts with concurrency limit
     const etags = {};
     const maxConcurrent = 3;
+    let completedBlocks = 0;
 
     for (let i = 0; i < blocks; i += maxConcurrent) {
         const batch = [];
         for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
             batch.push(
-                uploadAwsBlock(file, uploadInfo, uploadId, j, blockSize, context)
-                    .then(etag => { etags[j] = etag; })
+                uploadAwsBlockWithRetry(file, uploadInfo, uploadId, j, blockSize, context, onError)
+                    .then(etag => {
+                        etags[j] = etag;
+                        completedBlocks++;
+                        if (onProgress) {
+                            onProgress(completedBlocks / blocks);
+                        }
+                    })
             );
         }
 
         await Promise.all(batch);
     }
 
-    // Complete multipart upload
+    // Complete multipart upload with retry support
     let xml = '<CompleteMultipartUpload>';
     for (let i = 0; i < blocks; i++) {
         xml += `<Part><PartNumber>${i + 1}</PartNumber><ETag>${etags[i]}</ETag></Part>`;
     }
     xml += '</CompleteMultipartUpload>';
 
-    const completeResponse = await awsReq(uploadInfo, 'POST', `uploadId=${uploadId}`, xml, null, context);
-    await completeResponse.text();
+    let completeAttempt = 0;
+    while (true) {
+        completeAttempt++;
+        try {
+            const completeResponse = await awsReq(uploadInfo, 'POST', `uploadId=${uploadId}`, xml, null, context);
+            await completeResponse.text();
+            break;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'complete', attempt: completeAttempt });
+                continue;
+            }
+            throw error;
+        }
+    }
 
-    // Call server-side completion handler
-    const finalResponse = await rest.rest(
-        `Cloud/Aws/Bucket/Upload/${uploadInfo.Cloud_Aws_Bucket_Upload__}:handleComplete`,
-        'POST',
-        {},
-        context
-    );
+    // Call server-side completion handler with retry support
+    let handleAttempt = 0;
+    while (true) {
+        handleAttempt++;
+        try {
+            const finalResponse = await rest.rest(
+                `Cloud/Aws/Bucket/Upload/${uploadInfo.Cloud_Aws_Bucket_Upload__}:handleComplete`,
+                'POST',
+                {},
+                context
+            );
+            return finalResponse.data;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'handleComplete', attempt: handleAttempt });
+                continue;
+            }
+            throw error;
+        }
+    }
+}
 
-    return finalResponse.data;
+/**
+ * Upload a single block to AWS S3 with retry support
+ * @private
+ */
+async function uploadAwsBlockWithRetry(file, uploadInfo, uploadId, blockNum, blockSize, context, onError) {
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            return await uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context);
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'upload', blockNum, attempt });
+                continue;
+            }
+            throw error;
+        }
+    }
 }
 
 /**

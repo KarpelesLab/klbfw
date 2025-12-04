@@ -1196,6 +1196,173 @@ describe('Upload API', () => {
       ).rejects.toThrow('Invalid file');
     });
 
+    test('uploadFile calls onProgress callback', async () => {
+      const testContent = Buffer.from('Test content for progress');
+      const progressValues = [];
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-progress-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+        filename: 'test.bin'
+      }, null, {
+        onProgress: (progress) => progressValues.push(progress)
+      });
+
+      expect(progressValues.length).toBeGreaterThan(0);
+      expect(progressValues[progressValues.length - 1]).toBe(1);
+      expect(result.Blob__).toBe('blob-progress-test');
+    });
+
+    test('uploadFile onError handler enables retry on failure', async () => {
+      const testContent = Buffer.from('Test content for retry');
+      let putAttempts = 0;
+      const errorContexts = [];
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          putAttempts++;
+          if (putAttempts < 3) {
+            // Fail first 2 attempts
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              statusText: 'Internal Server Error',
+              headers: { get: () => null },
+              text: () => Promise.resolve('')
+            });
+          }
+          // Succeed on 3rd attempt
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-retry-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+        filename: 'test.bin'
+      }, null, {
+        onError: async (error, ctx) => {
+          errorContexts.push(ctx);
+          if (ctx.attempt >= 3) {
+            throw error; // Give up after 3 attempts
+          }
+          // Resolve to trigger retry
+        }
+      });
+
+      expect(putAttempts).toBe(3);
+      expect(errorContexts.length).toBe(2); // 2 failures before success
+      expect(errorContexts[0].phase).toBe('upload');
+      expect(errorContexts[0].attempt).toBe(1);
+      expect(errorContexts[1].attempt).toBe(2);
+      expect(result.Blob__).toBe('blob-retry-test');
+    });
+
+    test('uploadFile onError rejection stops retry', async () => {
+      const testContent = Buffer.from('Test content');
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      await expect(
+        upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+          filename: 'test.bin'
+        }, null, {
+          onError: async (error, ctx) => {
+            throw new Error('Giving up immediately');
+          }
+        })
+      ).rejects.toThrow('Giving up immediately');
+    });
+
     test('uploadFile handles AWS multipart upload', async () => {
       const testContent = Buffer.from('Test content for AWS');
       const apiCalls = [];
