@@ -891,25 +891,30 @@ module.exports.upload = (function () {
     function handleFailure(up, error) {
         // Skip if upload is no longer running
         if (!(up.up_id in state.running)) return;
-        
+
         // Check if already in failed list
         for (const failedItem of state.failed) {
             if (failedItem.up_id === up.up_id) {
                 return; // Already recorded as failed
             }
         }
-        
+
         // Record failure
         up.failure = error;
         state.failed.push(up);
         delete state.running[up.up_id];
-        
+
+        // Reject the promise so callers know the upload failed
+        if (up.reject) {
+            up.reject(error);
+        }
+
         // Continue processing queue
         upload.run();
-        
+
         // Notify progress
         sendProgress();
-        
+
         // Dispatch failure event
         utils.dispatchEvent("upload:failed", {
             item: up,
