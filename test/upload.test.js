@@ -1032,4 +1032,309 @@ describe('Upload API', () => {
       await expect(uploadPromise).rejects.toThrow();
     });
   });
+
+  describe('uploadFile() - Simple Node.js upload function', () => {
+    beforeEach(() => {
+      setupClientMode();
+      resetMocks();
+    });
+
+    test('uploadFile uploads a Buffer via PUT method', async () => {
+      const testContent = Buffer.from('Hello, World!');
+      const apiCalls = [];
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          apiCalls.push('init');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url === 'https://example.com/upload' && options?.method === 'PUT') {
+          apiCalls.push('PUT');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete') && options?.method === 'POST') {
+          apiCalls.push('Complete');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                Blob__: 'blob-test-12345',
+                SHA256: 'abc123',
+                Size: '13',
+                Mime: 'text/plain'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, {
+        filename: 'hello.txt',
+        type: 'text/plain'
+      });
+
+      expect(apiCalls).toEqual(['init', 'PUT', 'Complete']);
+      expect(result).toBeDefined();
+      expect(result.Blob__).toBe('blob-test-12345');
+      expect(result.SHA256).toBe('abc123');
+    });
+
+    test('uploadFile uploads a file-like object', async () => {
+      const testContent = Buffer.from('Test file content');
+      const fileObj = {
+        name: 'test.txt',
+        size: testContent.length,
+        type: 'text/plain',
+        lastModified: Date.now(),
+        content: testContent
+      };
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url === 'https://example.com/upload' && options?.method === 'PUT') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-fileobj-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', fileObj);
+
+      expect(result).toBeDefined();
+      expect(result.Blob__).toBe('blob-fileobj-test');
+    });
+
+    test('uploadFile calls onProgress callback', async () => {
+      const testContent = Buffer.from('Test content');
+      const progressValues = [];
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-progress-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      await upload.uploadFile('Misc/Debug:testUpload', testContent, {
+        filename: 'test.bin',
+        onProgress: (progress) => progressValues.push(progress)
+      });
+
+      expect(progressValues.length).toBeGreaterThan(0);
+      expect(progressValues[progressValues.length - 1]).toBe(1);
+    });
+
+    test('uploadFile rejects on HTTP error', async () => {
+      const testContent = Buffer.from('Test content');
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: { get: () => null },
+            text: () => Promise.resolve('Server error')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      await expect(
+        upload.uploadFile('Misc/Debug:testUpload', testContent, { filename: 'test.bin' })
+      ).rejects.toThrow('HTTP 500');
+    });
+
+    test('uploadFile rejects for invalid file input', async () => {
+      await expect(
+        upload.uploadFile('Misc/Debug:testUpload', { invalid: 'object' })
+      ).rejects.toThrow('Invalid file');
+    });
+
+    test('uploadFile handles AWS multipart upload', async () => {
+      const testContent = Buffer.from('Test content for AWS');
+      const apiCalls = [];
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          apiCalls.push('init');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                Cloud_Aws_Bucket_Upload__: 'clabu-test-id',
+                Bucket_Endpoint: {
+                  Host: 'example.s3.amazonaws.com',
+                  Name: 'test-bucket',
+                  Region: 'us-east-1'
+                },
+                Key: 'uploads/test.bin'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('signV4') && options?.method === 'POST') {
+          apiCalls.push('signV4');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { authorization: 'AWS4-HMAC-SHA256 Credential=test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('uploads=')) {
+          apiCalls.push('initMultipart');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('<InitiateMultipartUploadResult><UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>')
+          });
+        } else if (url.includes('partNumber=') && url.includes('uploadId=')) {
+          apiCalls.push('uploadPart');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: (h) => h === 'ETag' ? '"test-etag"' : null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('uploadId=') && !url.includes('partNumber=') && options?.method !== 'POST') {
+          apiCalls.push('completeMultipart');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('<CompleteMultipartUploadResult><ETag>"final-etag"</ETag></CompleteMultipartUploadResult>')
+          });
+        } else if (url.includes('s3.amazonaws.com') && options?.method === 'POST') {
+          apiCalls.push('completeMultipart');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('<CompleteMultipartUploadResult><ETag>"final-etag"</ETag></CompleteMultipartUploadResult>')
+          });
+        } else if (url.includes('handleComplete') && options?.method === 'POST') {
+          apiCalls.push('handleComplete');
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-aws-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, {
+        filename: 'test.bin'
+      });
+
+      expect(apiCalls).toContain('init');
+      expect(apiCalls).toContain('signV4');
+      expect(apiCalls).toContain('initMultipart');
+      expect(apiCalls).toContain('uploadPart');
+      expect(apiCalls).toContain('handleComplete');
+      expect(result.Blob__).toBe('blob-aws-test');
+    });
+  });
 });

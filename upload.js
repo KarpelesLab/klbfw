@@ -267,9 +267,299 @@ const utils = {
 };
 
 /**
+ * Simple file upload for Node.js consumers
+ *
+ * This function provides a straightforward way to upload a file and get a Promise
+ * that resolves when the upload is complete. It doesn't use global state or the
+ * upload.run() process.
+ *
+ * @param {string} path - API endpoint path (e.g., 'Misc/Debug:testUpload')
+ * @param {Buffer|ArrayBuffer|Object} file - File to upload. Can be:
+ *   - A Buffer or ArrayBuffer with file content
+ *   - A file-like object with { name, size, type, content, lastModified }
+ * @param {Object} [options] - Upload options
+ * @param {string} [options.filename] - Filename (defaults to 'file.bin')
+ * @param {string} [options.type] - MIME type (defaults to 'application/octet-stream')
+ * @param {Object} [options.params] - Additional parameters to send with the upload
+ * @param {Object} [options.context] - Request context
+ * @param {Function} [options.onProgress] - Progress callback(progress) where progress is 0-1
+ * @returns {Promise<Object>} - Resolves with the upload result data
+ *
+ * @example
+ * // Upload a buffer
+ * const buffer = Buffer.from('Hello, World!');
+ * const result = await uploadFile('Misc/Debug:testUpload', buffer, {
+ *   filename: 'hello.txt',
+ *   type: 'text/plain'
+ * });
+ * console.log(result); // { Blob__: '...', SHA256: '...', ... }
+ *
+ * @example
+ * // Upload with progress tracking
+ * const result = await uploadFile('Misc/Debug:testUpload', largeBuffer, {
+ *   filename: 'large-file.bin',
+ *   onProgress: (progress) => console.log(`${Math.round(progress * 100)}%`)
+ * });
+ */
+async function uploadFile(path, file, options = {}) {
+    // Normalize file to a file-like object
+    let fileObj;
+    if (file instanceof ArrayBuffer ||
+        (file.buffer instanceof ArrayBuffer) ||
+        (typeof Buffer !== 'undefined' && file instanceof Buffer)) {
+        // Raw buffer - wrap in file-like object
+        const size = file.byteLength || file.length;
+        fileObj = {
+            name: options.filename || 'file.bin',
+            size: size,
+            type: options.type || 'application/octet-stream',
+            lastModified: Date.now(),
+            content: file
+        };
+    } else if (file.content !== undefined) {
+        // Already a file-like object
+        fileObj = {
+            name: file.name || options.filename || 'file.bin',
+            size: file.size || file.content.byteLength || file.content.length,
+            type: file.type || options.type || 'application/octet-stream',
+            lastModified: file.lastModified || Date.now(),
+            content: file.content
+        };
+    } else {
+        throw new Error('Invalid file: must be a Buffer, ArrayBuffer, or file-like object with content');
+    }
+
+    const context = options.context || fwWrapper.getContext();
+    const params = { ...(options.params || {}) };
+
+    // Set file metadata
+    params.filename = fileObj.name;
+    params.size = fileObj.size;
+    params.lastModified = fileObj.lastModified / 1000;
+    params.type = fileObj.type;
+
+    // Initialize upload with the server
+    const response = await rest.rest(path, 'POST', params, context);
+    const data = response.data;
+
+    // Method 1: AWS signed multipart upload
+    if (data.Cloud_Aws_Bucket_Upload__) {
+        return doAwsUpload(fileObj, data, context, options.onProgress);
+    }
+
+    // Method 2: Direct PUT upload
+    if (data.PUT) {
+        return doPutUpload(fileObj, data, context, options.onProgress);
+    }
+
+    throw new Error('Invalid upload response format: no upload method available');
+}
+
+/**
+ * Perform a direct PUT upload (simple upload method)
+ * @private
+ */
+async function doPutUpload(file, uploadInfo, context, onProgress) {
+    const blockSize = uploadInfo.Blocksize || file.size;
+    const blocks = Math.ceil(file.size / blockSize);
+
+    // Upload blocks with concurrency limit
+    let completedBlocks = 0;
+    const maxConcurrent = 3;
+
+    // Process blocks in batches
+    for (let i = 0; i < blocks; i += maxConcurrent) {
+        const batch = [];
+        for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
+            batch.push(uploadPutBlock(file, uploadInfo, j, blockSize));
+        }
+
+        await Promise.all(batch);
+        completedBlocks += batch.length;
+
+        if (onProgress) {
+            onProgress(completedBlocks / blocks);
+        }
+    }
+
+    // All blocks done, call completion
+    const completeResponse = await rest.rest(uploadInfo.Complete, 'POST', {}, context);
+    return completeResponse.data;
+}
+
+/**
+ * Upload a single block via PUT
+ * @private
+ */
+async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
+    const startByte = blockNum * blockSize;
+    const endByte = Math.min(startByte + blockSize, file.size);
+
+    const arrayBuffer = await readFileSlice(file, startByte, endByte);
+
+    const headers = {
+        'Content-Type': file.type || 'application/octet-stream'
+    };
+
+    // Add Content-Range for multipart PUT
+    const totalBlocks = Math.ceil(file.size / blockSize);
+    if (totalBlocks > 1) {
+        headers['Content-Range'] = `bytes ${startByte}-${endByte - 1}/*`;
+    }
+
+    const response = await utils.fetch(uploadInfo.PUT, {
+        method: 'PUT',
+        body: arrayBuffer,
+        headers: headers
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    await response.text();
+}
+
+/**
+ * Perform an AWS multipart upload
+ * @private
+ */
+async function doAwsUpload(file, uploadInfo, context, onProgress) {
+    // Calculate optimal block size (min 5MB for AWS, target ~10k parts)
+    let blockSize = Math.ceil(file.size / 10000);
+    if (blockSize < 5242880) blockSize = 5242880;
+
+    const blocks = Math.ceil(file.size / blockSize);
+
+    // Initialize multipart upload
+    const initResponse = await awsReq(
+        uploadInfo,
+        'POST',
+        'uploads=',
+        '',
+        { 'Content-Type': file.type || 'application/octet-stream', 'X-Amz-Acl': 'private' },
+        context
+    );
+    const initXml = await initResponse.text();
+    const dom = utils.parseXML(initXml);
+    const uploadId = dom.querySelector('UploadId').innerHTML;
+
+    // Upload all parts with concurrency limit
+    const etags = {};
+    let completedBlocks = 0;
+    const maxConcurrent = 3;
+
+    for (let i = 0; i < blocks; i += maxConcurrent) {
+        const batch = [];
+        for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
+            batch.push(
+                uploadAwsBlock(file, uploadInfo, uploadId, j, blockSize, context)
+                    .then(etag => { etags[j] = etag; })
+            );
+        }
+
+        await Promise.all(batch);
+        completedBlocks += batch.length;
+
+        if (onProgress) {
+            onProgress(completedBlocks / blocks);
+        }
+    }
+
+    // Complete multipart upload
+    let xml = '<CompleteMultipartUpload>';
+    for (let i = 0; i < blocks; i++) {
+        xml += `<Part><PartNumber>${i + 1}</PartNumber><ETag>${etags[i]}</ETag></Part>`;
+    }
+    xml += '</CompleteMultipartUpload>';
+
+    const completeResponse = await awsReq(uploadInfo, 'POST', `uploadId=${uploadId}`, xml, null, context);
+    await completeResponse.text();
+
+    // Call server-side completion handler
+    const finalResponse = await rest.rest(
+        `Cloud/Aws/Bucket/Upload/${uploadInfo.Cloud_Aws_Bucket_Upload__}:handleComplete`,
+        'POST',
+        {},
+        context
+    );
+
+    return finalResponse.data;
+}
+
+/**
+ * Upload a single block to AWS S3
+ * @private
+ */
+async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context) {
+    const startByte = blockNum * blockSize;
+    const endByte = Math.min(startByte + blockSize, file.size);
+    const awsPartNumber = blockNum + 1; // AWS uses 1-based part numbers
+
+    const arrayBuffer = await readFileSlice(file, startByte, endByte);
+
+    const response = await awsReq(
+        uploadInfo,
+        'PUT',
+        `partNumber=${awsPartNumber}&uploadId=${uploadId}`,
+        arrayBuffer,
+        null,
+        context
+    );
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const etag = response.headers.get('ETag');
+    await response.text();
+    return etag;
+}
+
+/**
+ * Read a slice of a file as ArrayBuffer
+ * @private
+ */
+function readFileSlice(file, start, end) {
+    return new Promise((resolve, reject) => {
+        if (!file.content) {
+            reject(new Error('Cannot read file content - no content property'));
+            return;
+        }
+
+        const content = file.content;
+
+        if (content instanceof ArrayBuffer) {
+            if (start === 0 && end === content.byteLength) {
+                resolve(content);
+            } else {
+                resolve(content.slice(start, end));
+            }
+        } else if (content.buffer instanceof ArrayBuffer) {
+            // TypedArray (Uint8Array, etc.)
+            resolve(content.buffer.slice(content.byteOffset + start, content.byteOffset + end));
+        } else if (typeof Buffer !== 'undefined' && content instanceof Buffer) {
+            // Node.js Buffer
+            const arrayBuffer = content.buffer.slice(
+                content.byteOffset + start,
+                content.byteOffset + Math.min(end, content.byteLength)
+            );
+            resolve(arrayBuffer);
+        } else if (typeof content === 'string') {
+            // String content
+            const encoder = new TextEncoder();
+            const uint8Array = encoder.encode(content.slice(start, end));
+            resolve(uint8Array.buffer);
+        } else {
+            reject(new Error('Unsupported content type'));
+        }
+    });
+}
+
+/**
  * AWS S3 request handler
  * Performs a signed request to AWS S3 using a signature obtained from the server
- * 
+ *
  * @param {Object} upInfo - Upload info including bucket endpoint and key
  * @param {string} method - HTTP method (GET, POST, PUT)
  * @param {string} query - Query parameters
@@ -1169,3 +1459,6 @@ module.exports.upload = (function () {
 
     return upload;
 }());
+
+// Export simple upload function for Node.js consumers
+module.exports.uploadFile = uploadFile;
