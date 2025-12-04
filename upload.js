@@ -273,83 +273,140 @@ const utils = {
  * that resolves when the upload is complete. It doesn't use global state or the
  * upload.run() process.
  *
- * @param {string} path - API endpoint path (e.g., 'Misc/Debug:testUpload')
- * @param {Buffer|ArrayBuffer|Object} file - File to upload. Can be:
- *   - A Buffer or ArrayBuffer with file content
+ * @param {string} api - API endpoint path (e.g., 'Misc/Debug:testUpload')
+ * @param {Buffer|ArrayBuffer|Uint8Array|File|Object} buffer - File to upload. Can be:
+ *   - A Node.js Buffer
+ *   - An ArrayBuffer
+ *   - A Uint8Array or other TypedArray
+ *   - A browser File object
  *   - A file-like object with { name, size, type, content, lastModified }
- * @param {Object} [options] - Upload options
- * @param {string} [options.filename] - Filename (defaults to 'file.bin')
- * @param {string} [options.type] - MIME type (defaults to 'application/octet-stream')
- * @param {Object} [options.params] - Additional parameters to send with the upload
- * @param {Object} [options.context] - Request context
- * @param {Function} [options.onProgress] - Progress callback(progress) where progress is 0-1
+ *   - A string (will be converted to UTF-8 bytes)
+ * @param {string} [method='POST'] - HTTP method for the initial API call
+ * @param {Object} [params={}] - Additional parameters to send with the upload.
+ *   Can include `filename` and `type` to override defaults.
+ * @param {Object} [context=null] - Request context (uses default context if not provided)
  * @returns {Promise<Object>} - Resolves with the upload result data
  *
  * @example
- * // Upload a buffer
+ * // Upload a buffer with filename
  * const buffer = Buffer.from('Hello, World!');
- * const result = await uploadFile('Misc/Debug:testUpload', buffer, {
+ * const result = await uploadFile('Misc/Debug:testUpload', buffer, 'POST', {
  *   filename: 'hello.txt',
  *   type: 'text/plain'
  * });
- * console.log(result); // { Blob__: '...', SHA256: '...', ... }
  *
  * @example
- * // Upload with progress tracking
- * const result = await uploadFile('Misc/Debug:testUpload', largeBuffer, {
- *   filename: 'large-file.bin',
- *   onProgress: (progress) => console.log(`${Math.round(progress * 100)}%`)
- * });
+ * // Upload with defaults
+ * const result = await uploadFile('Misc/Debug:testUpload', buffer);
+ *
+ * @example
+ * // Upload a File object (browser)
+ * const result = await uploadFile('Misc/Debug:testUpload', fileInput.files[0]);
  */
-async function uploadFile(path, file, options = {}) {
-    // Normalize file to a file-like object
-    let fileObj;
-    if (file instanceof ArrayBuffer ||
-        (file.buffer instanceof ArrayBuffer) ||
-        (typeof Buffer !== 'undefined' && file instanceof Buffer)) {
-        // Raw buffer - wrap in file-like object
-        const size = file.byteLength || file.length;
-        fileObj = {
-            name: options.filename || 'file.bin',
-            size: size,
-            type: options.type || 'application/octet-stream',
-            lastModified: Date.now(),
-            content: file
-        };
-    } else if (file.content !== undefined) {
-        // Already a file-like object
-        fileObj = {
-            name: file.name || options.filename || 'file.bin',
-            size: file.size || file.content.byteLength || file.content.length,
-            type: file.type || options.type || 'application/octet-stream',
-            lastModified: file.lastModified || Date.now(),
-            content: file.content
-        };
+async function uploadFile(api, buffer, method, params, context) {
+    // Handle default values
+    method = method || 'POST';
+    params = params || {};
+
+    // Get context from framework if not provided, and add available values
+    if (!context) {
+        context = fwWrapper.getContext();
     } else {
-        throw new Error('Invalid file: must be a Buffer, ArrayBuffer, or file-like object with content');
+        // Merge with default context values if available
+        const defaultContext = fwWrapper.getContext();
+        if (defaultContext) {
+            context = { ...defaultContext, ...context };
+        }
     }
 
-    const context = options.context || fwWrapper.getContext();
-    const params = { ...(options.params || {}) };
+    // Normalize buffer to a file-like object
+    let fileObj;
 
-    // Set file metadata
-    params.filename = fileObj.name;
-    params.size = fileObj.size;
-    params.lastModified = fileObj.lastModified / 1000;
-    params.type = fileObj.type;
+    // Handle string input
+    if (typeof buffer === 'string') {
+        const encoder = new TextEncoder();
+        const uint8Array = encoder.encode(buffer);
+        fileObj = {
+            name: params.filename || 'file.txt',
+            size: uint8Array.length,
+            type: params.type || 'text/plain',
+            lastModified: Date.now(),
+            content: uint8Array.buffer
+        };
+    }
+    // Handle ArrayBuffer
+    else if (buffer instanceof ArrayBuffer) {
+        fileObj = {
+            name: params.filename || 'file.bin',
+            size: buffer.byteLength,
+            type: params.type || 'application/octet-stream',
+            lastModified: Date.now(),
+            content: buffer
+        };
+    }
+    // Handle TypedArray (Uint8Array, etc.)
+    else if (buffer && buffer.buffer instanceof ArrayBuffer) {
+        fileObj = {
+            name: params.filename || 'file.bin',
+            size: buffer.byteLength,
+            type: params.type || 'application/octet-stream',
+            lastModified: Date.now(),
+            content: buffer
+        };
+    }
+    // Handle Node.js Buffer
+    else if (typeof Buffer !== 'undefined' && buffer instanceof Buffer) {
+        fileObj = {
+            name: params.filename || 'file.bin',
+            size: buffer.length,
+            type: params.type || 'application/octet-stream',
+            lastModified: Date.now(),
+            content: buffer
+        };
+    }
+    // Handle browser File object
+    else if (env.isBrowser && typeof File !== 'undefined' && buffer instanceof File) {
+        fileObj = {
+            name: buffer.name || params.filename || 'file.bin',
+            size: buffer.size,
+            type: buffer.type || params.type || 'application/octet-stream',
+            lastModified: buffer.lastModified || Date.now(),
+            browserFile: buffer  // Keep reference to original File for reading
+        };
+    }
+    // Handle file-like object with content property
+    else if (buffer && buffer.content !== undefined) {
+        fileObj = {
+            name: buffer.name || params.filename || 'file.bin',
+            size: buffer.size || buffer.content.byteLength || buffer.content.length,
+            type: buffer.type || params.type || 'application/octet-stream',
+            lastModified: buffer.lastModified || Date.now(),
+            content: buffer.content
+        };
+    }
+    else {
+        throw new Error('Invalid file: must be a Buffer, ArrayBuffer, Uint8Array, File, string, or file-like object with content');
+    }
+
+    // Merge params with file metadata (file metadata takes precedence for these fields)
+    const uploadParams = { ...params };
+    uploadParams.filename = fileObj.name;
+    uploadParams.size = fileObj.size;
+    uploadParams.lastModified = fileObj.lastModified / 1000;
+    uploadParams.type = fileObj.type;
 
     // Initialize upload with the server
-    const response = await rest.rest(path, 'POST', params, context);
+    const response = await rest.rest(api, method, uploadParams, context);
     const data = response.data;
 
     // Method 1: AWS signed multipart upload
     if (data.Cloud_Aws_Bucket_Upload__) {
-        return doAwsUpload(fileObj, data, context, options.onProgress);
+        return doAwsUpload(fileObj, data, context);
     }
 
     // Method 2: Direct PUT upload
     if (data.PUT) {
-        return doPutUpload(fileObj, data, context, options.onProgress);
+        return doPutUpload(fileObj, data, context);
     }
 
     throw new Error('Invalid upload response format: no upload method available');
@@ -359,12 +416,11 @@ async function uploadFile(path, file, options = {}) {
  * Perform a direct PUT upload (simple upload method)
  * @private
  */
-async function doPutUpload(file, uploadInfo, context, onProgress) {
+async function doPutUpload(file, uploadInfo, context) {
     const blockSize = uploadInfo.Blocksize || file.size;
     const blocks = Math.ceil(file.size / blockSize);
 
     // Upload blocks with concurrency limit
-    let completedBlocks = 0;
     const maxConcurrent = 3;
 
     // Process blocks in batches
@@ -375,11 +431,6 @@ async function doPutUpload(file, uploadInfo, context, onProgress) {
         }
 
         await Promise.all(batch);
-        completedBlocks += batch.length;
-
-        if (onProgress) {
-            onProgress(completedBlocks / blocks);
-        }
     }
 
     // All blocks done, call completion
@@ -424,7 +475,7 @@ async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
  * Perform an AWS multipart upload
  * @private
  */
-async function doAwsUpload(file, uploadInfo, context, onProgress) {
+async function doAwsUpload(file, uploadInfo, context) {
     // Calculate optimal block size (min 5MB for AWS, target ~10k parts)
     let blockSize = Math.ceil(file.size / 10000);
     if (blockSize < 5242880) blockSize = 5242880;
@@ -446,7 +497,6 @@ async function doAwsUpload(file, uploadInfo, context, onProgress) {
 
     // Upload all parts with concurrency limit
     const etags = {};
-    let completedBlocks = 0;
     const maxConcurrent = 3;
 
     for (let i = 0; i < blocks; i += maxConcurrent) {
@@ -459,11 +509,6 @@ async function doAwsUpload(file, uploadInfo, context, onProgress) {
         }
 
         await Promise.all(batch);
-        completedBlocks += batch.length;
-
-        if (onProgress) {
-            onProgress(completedBlocks / blocks);
-        }
     }
 
     // Complete multipart upload
@@ -522,6 +567,16 @@ async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, c
  */
 function readFileSlice(file, start, end) {
     return new Promise((resolve, reject) => {
+        // Handle browser File objects
+        if (file.browserFile) {
+            const slice = file.browserFile.slice(start, end);
+            const reader = new FileReader();
+            reader.addEventListener('loadend', () => resolve(reader.result));
+            reader.addEventListener('error', (e) => reject(e));
+            reader.readAsArrayBuffer(slice);
+            return;
+        }
+
         if (!file.content) {
             reject(new Error('Cannot read file content - no content property'));
             return;

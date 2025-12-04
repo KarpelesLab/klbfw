@@ -1088,7 +1088,7 @@ describe('Upload API', () => {
         return Promise.reject(new Error(`Unexpected URL: ${url}`));
       });
 
-      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, {
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
         filename: 'hello.txt',
         type: 'text/plain'
       });
@@ -1152,56 +1152,6 @@ describe('Upload API', () => {
       expect(result.Blob__).toBe('blob-fileobj-test');
     });
 
-    test('uploadFile calls onProgress callback', async () => {
-      const testContent = Buffer.from('Test content');
-      const progressValues = [];
-
-      global.fetch = jest.fn().mockImplementation((url, options) => {
-        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            headers: { get: () => 'application/json' },
-            json: () => Promise.resolve({
-              result: 'success',
-              data: {
-                PUT: 'https://example.com/upload',
-                Complete: 'Blob/Upload/TEST:handleComplete'
-              }
-            }),
-            text: () => Promise.resolve('')
-          });
-        } else if (options?.method === 'PUT') {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            headers: { get: () => null },
-            text: () => Promise.resolve('')
-          });
-        } else if (url.includes('handleComplete')) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            headers: { get: () => 'application/json' },
-            json: () => Promise.resolve({
-              result: 'success',
-              data: { Blob__: 'blob-progress-test' }
-            }),
-            text: () => Promise.resolve('')
-          });
-        }
-        return Promise.reject(new Error(`Unexpected URL: ${url}`));
-      });
-
-      await upload.uploadFile('Misc/Debug:testUpload', testContent, {
-        filename: 'test.bin',
-        onProgress: (progress) => progressValues.push(progress)
-      });
-
-      expect(progressValues.length).toBeGreaterThan(0);
-      expect(progressValues[progressValues.length - 1]).toBe(1);
-    });
-
     test('uploadFile rejects on HTTP error', async () => {
       const testContent = Buffer.from('Test content');
 
@@ -1233,7 +1183,7 @@ describe('Upload API', () => {
       });
 
       await expect(
-        upload.uploadFile('Misc/Debug:testUpload', testContent, { filename: 'test.bin' })
+        upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', { filename: 'test.bin' })
       ).rejects.toThrow('HTTP 500');
     });
 
@@ -1325,7 +1275,7 @@ describe('Upload API', () => {
         return Promise.reject(new Error(`Unexpected URL: ${url}`));
       });
 
-      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, {
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
         filename: 'test.bin'
       });
 
