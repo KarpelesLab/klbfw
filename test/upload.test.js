@@ -1039,9 +1039,10 @@ describe('Upload API', () => {
       resetMocks();
     });
 
-    test('uploadFile uploads a Buffer via PUT method', async () => {
+    test('uploadFile uploads a Buffer via PUT method with correct Content-Type', async () => {
       const testContent = Buffer.from('Hello, World!');
       const apiCalls = [];
+      let capturedContentType = null;
 
       global.fetch = jest.fn().mockImplementation((url, options) => {
         if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
@@ -1061,6 +1062,7 @@ describe('Upload API', () => {
           });
         } else if (url === 'https://example.com/upload' && options?.method === 'PUT') {
           apiCalls.push('PUT');
+          capturedContentType = options?.headers?.['Content-Type'];
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -1097,6 +1099,7 @@ describe('Upload API', () => {
       expect(result).toBeDefined();
       expect(result.Blob__).toBe('blob-test-12345');
       expect(result.SHA256).toBe('abc123');
+      expect(capturedContentType).toBe('text/plain');
     });
 
     test('uploadFile uploads a file-like object', async () => {
