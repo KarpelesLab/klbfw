@@ -39,23 +39,22 @@
  * ```js
  * // For Node.js environments, first install dependencies:
  * // npm install node-fetch @xmldom/xmldom
- * 
- * // Create a buffer-based file object for upload
- * const file = {
- *   name: 'test.txt',
- *   size: buffer.length,
- *   type: 'text/plain',
- *   content: buffer, // Buffer or ArrayBuffer with file content
- *   lastModified: Date.now(),
- *   slice: function(start, end) {
- *     return {
- *       content: this.content.slice(start, end)
- *     };
- *   }
- * };
- * 
- * upload.append('Misc/Debug:testUpload', file)
- *   .then(result => console.log('Upload complete', result));
+ *
+ * // Simple upload with a buffer
+ * const { uploadFile } = require('./upload');
+ * const buffer = Buffer.from('Hello, World!');
+ * const result = await uploadFile('Misc/Debug:testUpload', buffer, 'POST', {
+ *   filename: 'hello.txt',
+ *   type: 'text/plain'
+ * });
+ *
+ * // Upload large files using a stream (doesn't load entire file into memory)
+ * const fs = require('fs');
+ * const stream = fs.createReadStream('/path/to/2tb-file.bin');
+ * const result = await uploadFile('Misc/Debug:testUpload', stream, 'POST', {
+ *   filename: 'large-file.bin',
+ *   type: 'application/octet-stream'
+ * });
  * ```
  * 
  * @module upload
@@ -280,6 +279,7 @@ const utils = {
  *   - A Uint8Array or other TypedArray
  *   - A browser File object
  *   - A file-like object with { name, size, type, content, lastModified }
+ *   - A file-like object with { name, size, type, stream } for streaming large files
  *   - A string (will be converted to UTF-8 bytes)
  * @param {string} [method='POST'] - HTTP method for the initial API call
  * @param {Object} [params={}] - Additional parameters to send with the upload.
@@ -319,6 +319,16 @@ const utils = {
  * @example
  * // Upload a File object (browser)
  * const result = await uploadFile('Misc/Debug:testUpload', fileInput.files[0]);
+ *
+ * @example
+ * // Upload a large file using a stream (Node.js) - doesn't load entire file into memory
+ * const fs = require('fs');
+ * const stream = fs.createReadStream('/path/to/large-file.bin');
+ * const result = await uploadFile('Misc/Debug:testUpload', stream, 'POST', {
+ *   filename: 'large-file.bin',
+ *   type: 'application/octet-stream',
+ *   size: 2199023255552  // optional: if known, enables optimal block sizing
+ * });
  */
 async function uploadFile(api, buffer, method, params, context, options) {
     // Handle default values
@@ -402,8 +412,18 @@ async function uploadFile(api, buffer, method, params, context, options) {
             content: buffer.content
         };
     }
+    // Handle Node.js readable stream
+    else if (buffer && typeof buffer.read === 'function' && typeof buffer.on === 'function') {
+        fileObj = {
+            name: params.filename || 'file.bin',
+            size: params.size || null,  // null means unknown size
+            type: params.type || 'application/octet-stream',
+            lastModified: Date.now(),
+            stream: buffer
+        };
+    }
     else {
-        throw new Error('Invalid file: must be a Buffer, ArrayBuffer, Uint8Array, File, string, or file-like object with content');
+        throw new Error('Invalid file: must be a Buffer, ArrayBuffer, Uint8Array, File, readable stream, or file-like object with content');
     }
 
     // Merge params with file metadata (file metadata takes precedence for these fields)
@@ -435,30 +455,91 @@ async function uploadFile(api, buffer, method, params, context, options) {
  * @private
  */
 async function doPutUpload(file, uploadInfo, context, options) {
-    const blockSize = uploadInfo.Blocksize || file.size;
-    const blocks = Math.ceil(file.size / blockSize);
     const { onProgress, onError } = options;
 
-    // Upload blocks with concurrency limit
+    // Calculate block size
+    // - If size known: use server's Blocksize or file size
+    // - If size unknown (streaming): use 526MB default
+    let blockSize;
+    let blocks = null;
+
+    if (file.size) {
+        blockSize = uploadInfo.Blocksize || file.size;
+        blocks = Math.ceil(file.size / blockSize);
+    } else {
+        blockSize = 551550976;  // 526MB
+    }
+
     const maxConcurrent = 3;
     let completedBlocks = 0;
 
-    // Process blocks in batches
-    for (let i = 0; i < blocks; i += maxConcurrent) {
-        const batch = [];
-        for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
-            batch.push(
-                uploadPutBlockWithRetry(file, uploadInfo, j, blockSize, onError)
-                    .then(() => {
-                        completedBlocks++;
-                        if (onProgress) {
-                            onProgress(completedBlocks / blocks);
-                        }
-                    })
-            );
+    // Stream-based upload: read sequentially, upload in parallel
+    if (file.stream) {
+        let blockNum = 0;
+        let streamEnded = false;
+        let byteOffset = 0;
+        const pendingUploads = [];
+
+        while (!streamEnded || pendingUploads.length > 0) {
+            // Read and start uploads up to maxConcurrent
+            while (!streamEnded && pendingUploads.length < maxConcurrent) {
+                const chunkData = await readChunkFromStream(file.stream, blockSize);
+                if (chunkData === null) {
+                    streamEnded = true;
+                    break;
+                }
+
+                const currentBlock = blockNum++;
+                const startByte = byteOffset;
+                byteOffset += chunkData.byteLength;
+
+                const uploadPromise = uploadPutBlockWithDataAndRetry(
+                    uploadInfo, currentBlock, startByte, chunkData, file.type, onError
+                ).then(() => {
+                    completedBlocks++;
+                    if (onProgress && blocks) {
+                        onProgress(completedBlocks / blocks);
+                    }
+                });
+
+                pendingUploads.push(uploadPromise);
+            }
+
+            // Wait for at least one upload to complete before reading more
+            if (pendingUploads.length > 0) {
+                await Promise.race(pendingUploads);
+                // Remove completed promises
+                for (let i = pendingUploads.length - 1; i >= 0; i--) {
+                    const status = await Promise.race([
+                        pendingUploads[i].then(() => 'done'),
+                        Promise.resolve('pending')
+                    ]);
+                    if (status === 'done') {
+                        pendingUploads.splice(i, 1);
+                    }
+                }
+            }
         }
 
-        await Promise.all(batch);
+        blocks = blockNum;
+    } else {
+        // Buffer-based upload: original logic
+        for (let i = 0; i < blocks; i += maxConcurrent) {
+            const batch = [];
+            for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
+                batch.push(
+                    uploadPutBlockWithRetry(file, uploadInfo, j, blockSize, onError)
+                        .then(() => {
+                            completedBlocks++;
+                            if (onProgress) {
+                                onProgress(completedBlocks / blocks);
+                            }
+                        })
+                );
+            }
+
+            await Promise.all(batch);
+        }
     }
 
     // All blocks done, call completion with retry support
@@ -472,6 +553,44 @@ async function doPutUpload(file, uploadInfo, context, options) {
             if (onError) {
                 await onError(error, { phase: 'complete', attempt });
                 // If onError resolves, retry
+                continue;
+            }
+            throw error;
+        }
+    }
+}
+
+/**
+ * Upload a single block via PUT with pre-read data and retry support
+ * @private
+ */
+async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, data, contentType, onError) {
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            const headers = {
+                'Content-Type': contentType || 'application/octet-stream'
+            };
+
+            // Add Content-Range for multipart PUT
+            headers['Content-Range'] = `bytes ${startByte}-${startByte + data.byteLength - 1}/*`;
+
+            const response = await utils.fetch(uploadInfo.PUT, {
+                method: 'PUT',
+                body: data,
+                headers: headers
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            await response.text();
+            return;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'upload', blockNum, attempt });
                 continue;
             }
             throw error;
@@ -540,11 +659,19 @@ async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
 async function doAwsUpload(file, uploadInfo, context, options) {
     const { onProgress, onError } = options;
 
-    // Calculate optimal block size (min 5MB for AWS, target ~10k parts)
-    let blockSize = Math.ceil(file.size / 10000);
-    if (blockSize < 5242880) blockSize = 5242880;
+    // Calculate block size
+    // - If size known: target ~10k parts, min 5MB
+    // - If size unknown: use 526MB (allows up to ~5TB with 10k parts)
+    let blockSize;
+    let blocks = null;  // null means unknown (streaming)
 
-    const blocks = Math.ceil(file.size / blockSize);
+    if (file.size) {
+        blockSize = Math.ceil(file.size / 10000);
+        if (blockSize < 5242880) blockSize = 5242880;
+        blocks = Math.ceil(file.size / blockSize);
+    } else {
+        blockSize = 551550976;  // 526MB
+    }
 
     // Initialize multipart upload with retry support
     let uploadId;
@@ -573,27 +700,75 @@ async function doAwsUpload(file, uploadInfo, context, options) {
         }
     }
 
-    // Upload all parts with concurrency limit
     const etags = {};
     const maxConcurrent = 3;
     let completedBlocks = 0;
 
-    for (let i = 0; i < blocks; i += maxConcurrent) {
-        const batch = [];
-        for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
-            batch.push(
-                uploadAwsBlockWithRetry(file, uploadInfo, uploadId, j, blockSize, context, onError)
-                    .then(etag => {
-                        etags[j] = etag;
-                        completedBlocks++;
-                        if (onProgress) {
-                            onProgress(completedBlocks / blocks);
-                        }
-                    })
-            );
+    // Stream-based upload: read sequentially, upload in parallel
+    if (file.stream) {
+        let blockNum = 0;
+        let streamEnded = false;
+        const pendingUploads = [];
+
+        while (!streamEnded || pendingUploads.length > 0) {
+            // Read and start uploads up to maxConcurrent
+            while (!streamEnded && pendingUploads.length < maxConcurrent) {
+                const chunkData = await readChunkFromStream(file.stream, blockSize);
+                if (chunkData === null) {
+                    streamEnded = true;
+                    break;
+                }
+
+                const currentBlock = blockNum++;
+                const uploadPromise = uploadAwsBlockWithDataAndRetry(
+                    uploadInfo, uploadId, currentBlock, chunkData, context, onError
+                ).then(etag => {
+                    etags[currentBlock] = etag;
+                    completedBlocks++;
+                    if (onProgress && blocks) {
+                        onProgress(completedBlocks / blocks);
+                    }
+                });
+
+                pendingUploads.push(uploadPromise);
+            }
+
+            // Wait for at least one upload to complete before reading more
+            if (pendingUploads.length > 0) {
+                await Promise.race(pendingUploads);
+                // Remove completed promises
+                for (let i = pendingUploads.length - 1; i >= 0; i--) {
+                    const status = await Promise.race([
+                        pendingUploads[i].then(() => 'done'),
+                        Promise.resolve('pending')
+                    ]);
+                    if (status === 'done') {
+                        pendingUploads.splice(i, 1);
+                    }
+                }
+            }
         }
 
-        await Promise.all(batch);
+        blocks = blockNum;  // Now we know the total
+    } else {
+        // Buffer-based upload: original logic
+        for (let i = 0; i < blocks; i += maxConcurrent) {
+            const batch = [];
+            for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
+                batch.push(
+                    uploadAwsBlockWithRetry(file, uploadInfo, uploadId, j, blockSize, context, onError)
+                        .then(etag => {
+                            etags[j] = etag;
+                            completedBlocks++;
+                            if (onProgress) {
+                                onProgress(completedBlocks / blocks);
+                            }
+                        })
+                );
+            }
+
+            await Promise.all(batch);
+        }
     }
 
     // Complete multipart upload with retry support
@@ -634,6 +809,42 @@ async function doAwsUpload(file, uploadInfo, context, options) {
         } catch (error) {
             if (onError) {
                 await onError(error, { phase: 'handleComplete', attempt: handleAttempt });
+                continue;
+            }
+            throw error;
+        }
+    }
+}
+
+/**
+ * Upload a block to AWS S3 with pre-read data and retry support
+ * @private
+ */
+async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, data, context, onError) {
+    let attempt = 0;
+    while (true) {
+        attempt++;
+        try {
+            const awsPartNumber = blockNum + 1;
+            const response = await awsReq(
+                uploadInfo,
+                'PUT',
+                `partNumber=${awsPartNumber}&uploadId=${uploadId}`,
+                data,
+                null,
+                context
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const etag = response.headers.get('ETag');
+            await response.text();
+            return etag;
+        } catch (error) {
+            if (onError) {
+                await onError(error, { phase: 'upload', blockNum, attempt });
                 continue;
             }
             throw error;
@@ -688,6 +899,82 @@ async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, c
     const etag = response.headers.get('ETag');
     await response.text();
     return etag;
+}
+
+/**
+ * Read a chunk of specified size from a stream
+ * @private
+ * @param {ReadableStream} stream - Node.js readable stream
+ * @param {number} size - Number of bytes to read
+ * @returns {Promise<ArrayBuffer|null>} - ArrayBuffer with data, or null if stream ended
+ */
+function readChunkFromStream(stream, size) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        let bytesRead = 0;
+
+        const onReadable = () => {
+            let chunk;
+            while (bytesRead < size && (chunk = stream.read(Math.min(size - bytesRead, 65536))) !== null) {
+                chunks.push(chunk);
+                bytesRead += chunk.length;
+            }
+
+            if (bytesRead >= size) {
+                cleanup();
+                resolve(combineChunks(chunks));
+            }
+        };
+
+        const onEnd = () => {
+            cleanup();
+            if (bytesRead === 0) {
+                resolve(null);  // Stream ended, no more data
+            } else {
+                resolve(combineChunks(chunks));
+            }
+        };
+
+        const onError = (err) => {
+            cleanup();
+            reject(err);
+        };
+
+        const cleanup = () => {
+            stream.removeListener('readable', onReadable);
+            stream.removeListener('end', onEnd);
+            stream.removeListener('error', onError);
+        };
+
+        stream.on('readable', onReadable);
+        stream.on('end', onEnd);
+        stream.on('error', onError);
+
+        // Try reading immediately in case data is already buffered
+        onReadable();
+    });
+}
+
+/**
+ * Combine chunks into a single ArrayBuffer
+ * @private
+ */
+function combineChunks(chunks) {
+    if (chunks.length === 0) {
+        return new ArrayBuffer(0);
+    }
+    if (chunks.length === 1) {
+        const chunk = chunks[0];
+        return chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.length);
+    }
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.length), offset);
+        offset += chunk.length;
+    }
+    return result.buffer;
 }
 
 /**
