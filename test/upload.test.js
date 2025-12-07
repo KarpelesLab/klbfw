@@ -1363,6 +1363,26 @@ describe('Upload API', () => {
       ).rejects.toThrow('Giving up immediately');
     });
 
+    test('uploadFile uploads a readable stream via PUT method', async () => {
+      // Use real fetch with API prefix
+      global.fetch = require('node-fetch');
+      FW.call_url_prefix = 'https://hub.atonline.com';
+
+      const { Readable } = require('stream');
+      const testData = Buffer.from('Stream content for upload test - this is the data');
+      const mockStream = Readable.from([testData]);
+
+      const result = await upload.uploadFile('Misc/Debug:testUpload', mockStream, 'POST', {
+        filename: 'stream-test.bin',
+        type: 'application/octet-stream',
+        size: testData.length
+      });
+
+      expect(result).toBeDefined();
+      expect(result.Blob__).toBeDefined();
+      expect(result.Size).toBe(String(testData.length));
+    }, 30000);
+
     test('uploadFile handles AWS multipart upload', async () => {
       const testContent = Buffer.from('Test content for AWS');
       const apiCalls = [];

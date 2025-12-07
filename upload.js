@@ -493,8 +493,10 @@ async function doPutUpload(file, uploadInfo, context, options) {
                 const startByte = byteOffset;
                 byteOffset += chunkData.byteLength;
 
+                // Only add Content-Range for multi-block uploads
+                const useContentRange = blocks === null || blocks > 1;
                 const uploadPromise = uploadPutBlockWithDataAndRetry(
-                    uploadInfo, currentBlock, startByte, chunkData, file.type, onError
+                    uploadInfo, currentBlock, startByte, chunkData, file.type, onError, useContentRange
                 ).then(() => {
                     completedBlocks++;
                     if (onProgress && blocks) {
@@ -507,17 +509,10 @@ async function doPutUpload(file, uploadInfo, context, options) {
 
             // Wait for at least one upload to complete before reading more
             if (pendingUploads.length > 0) {
-                await Promise.race(pendingUploads);
-                // Remove completed promises
-                for (let i = pendingUploads.length - 1; i >= 0; i--) {
-                    const status = await Promise.race([
-                        pendingUploads[i].then(() => 'done'),
-                        Promise.resolve('pending')
-                    ]);
-                    if (status === 'done') {
-                        pendingUploads.splice(i, 1);
-                    }
-                }
+                // Create indexed promises that return their index when done
+                const indexedPromises = pendingUploads.map((p, idx) => p.then(() => idx));
+                const completedIdx = await Promise.race(indexedPromises);
+                pendingUploads.splice(completedIdx, 1);
             }
         }
 
@@ -564,7 +559,7 @@ async function doPutUpload(file, uploadInfo, context, options) {
  * Upload a single block via PUT with pre-read data and retry support
  * @private
  */
-async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, data, contentType, onError) {
+async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, data, contentType, onError, useContentRange) {
     let attempt = 0;
     while (true) {
         attempt++;
@@ -573,8 +568,10 @@ async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, d
                 'Content-Type': contentType || 'application/octet-stream'
             };
 
-            // Add Content-Range for multipart PUT
-            headers['Content-Range'] = `bytes ${startByte}-${startByte + data.byteLength - 1}/*`;
+            // Add Content-Range for multipart PUT (not for single-block uploads)
+            if (useContentRange) {
+                headers['Content-Range'] = `bytes ${startByte}-${startByte + data.byteLength - 1}/*`;
+            }
 
             const response = await utils.fetch(uploadInfo.PUT, {
                 method: 'PUT',
@@ -735,17 +732,10 @@ async function doAwsUpload(file, uploadInfo, context, options) {
 
             // Wait for at least one upload to complete before reading more
             if (pendingUploads.length > 0) {
-                await Promise.race(pendingUploads);
-                // Remove completed promises
-                for (let i = pendingUploads.length - 1; i >= 0; i--) {
-                    const status = await Promise.race([
-                        pendingUploads[i].then(() => 'done'),
-                        Promise.resolve('pending')
-                    ]);
-                    if (status === 'done') {
-                        pendingUploads.splice(i, 1);
-                    }
-                }
+                // Create indexed promises that return their index when done
+                const indexedPromises = pendingUploads.map((p, idx) => p.then(() => idx));
+                const completedIdx = await Promise.race(indexedPromises);
+                pendingUploads.splice(completedIdx, 1);
             }
         }
 
@@ -910,10 +900,26 @@ async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, c
  */
 function readChunkFromStream(stream, size) {
     return new Promise((resolve, reject) => {
+        // Check if stream already ended before we start
+        if (stream.readableEnded) {
+            resolve(null);
+            return;
+        }
+
         const chunks = [];
         let bytesRead = 0;
+        let resolved = false;
+
+        const doResolve = (value) => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            resolve(value);
+        };
 
         const onReadable = () => {
+            if (resolved) return;
+
             let chunk;
             while (bytesRead < size && (chunk = stream.read(Math.min(size - bytesRead, 65536))) !== null) {
                 chunks.push(chunk);
@@ -921,21 +927,29 @@ function readChunkFromStream(stream, size) {
             }
 
             if (bytesRead >= size) {
-                cleanup();
-                resolve(combineChunks(chunks));
+                doResolve(combineChunks(chunks));
+            } else if (stream.readableEnded) {
+                // Stream already ended, resolve with what we have
+                if (bytesRead === 0) {
+                    doResolve(null);
+                } else {
+                    doResolve(combineChunks(chunks));
+                }
             }
         };
 
         const onEnd = () => {
-            cleanup();
+            if (resolved) return;
             if (bytesRead === 0) {
-                resolve(null);  // Stream ended, no more data
+                doResolve(null);  // Stream ended, no more data
             } else {
-                resolve(combineChunks(chunks));
+                doResolve(combineChunks(chunks));
             }
         };
 
         const onError = (err) => {
+            if (resolved) return;
+            resolved = true;
             cleanup();
             reject(err);
         };
