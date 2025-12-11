@@ -2,6 +2,7 @@
 
 const klbfw = require('../index');
 const upload = require('../upload');
+const uploadLegacy = require('../upload-legacy');
 const { setupSSRMode, setupClientMode, resetMocks } = require('./setup');
 
 // Mock file for upload tests
@@ -90,7 +91,7 @@ describe('Upload API', () => {
     resetMocks();
     
     // Reset upload.js state
-    upload.upload.getStatus = function() {
+    uploadLegacy.upload.getStatus = function() {
       return {
         queue: [],
         running: [],
@@ -128,11 +129,11 @@ describe('Upload API', () => {
       });
 
       // Add to queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', mockFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', mockFile, {});
       
       // Override the upload functions for testing
-      const originalState = upload.upload.getStatus();
-      upload.upload.getStatus = function() {
+      const originalState = uploadLegacy.upload.getStatus();
+      uploadLegacy.upload.getStatus = function() {
         return {
           queue: [],
           running: [{
@@ -177,7 +178,7 @@ describe('Upload API', () => {
       const mockFile = new MockFile('test.jpg', 12345, 'image/jpeg');
       
       // Override the getStatus method for testing
-      upload.upload.getStatus = function() {
+      uploadLegacy.upload.getStatus = function() {
         return {
           queue: [{
             up_id: 0,
@@ -190,7 +191,7 @@ describe('Upload API', () => {
       };
       
       // Get status
-      const status = upload.upload.getStatus();
+      const status = uploadLegacy.upload.getStatus();
       expect(status).toHaveProperty('queue');
       expect(status).toHaveProperty('running');
       expect(status).toHaveProperty('failed');
@@ -319,15 +320,15 @@ describe('Upload API', () => {
       const testFile = new MockFile('test-file.txt', testContent.length, 'text/plain');
       
       // Add the file to the upload queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', testFile, {});
       
       // Start the upload process
-      upload.upload.run();
+      uploadLegacy.upload.run();
       
       // Mock the upload process - simulate completion
       setTimeout(() => {
         // Find the upload in the state and resolve it
-        const originalState = upload.upload.getStatus();
+        const originalState = uploadLegacy.upload.getStatus();
         const queue = Array.isArray(originalState.queue) ? originalState.queue : [];
         const running = Array.isArray(originalState.running) ? originalState.running : [];
         const pendingUpload = queue[0] || running[0];
@@ -474,15 +475,15 @@ describe('Upload API', () => {
       });
       
       // Add the file to the upload queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', testFile, {});
       
       // Start the upload process
-      upload.upload.run();
+      uploadLegacy.upload.run();
       
       // Mock the upload process - simulate completion
       setTimeout(() => {
         // Find the upload in the state and resolve it
-        const originalState = upload.upload.getStatus();
+        const originalState = uploadLegacy.upload.getStatus();
         const queue = Array.isArray(originalState.queue) ? originalState.queue : [];
         const running = Array.isArray(originalState.running) ? originalState.running : [];
         const pendingUpload = queue[0] || running[0];
@@ -643,10 +644,10 @@ describe('Upload API', () => {
       };
 
       // Add the file to the upload queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', testFile, {});
 
       // Start the upload process
-      upload.upload.run();
+      uploadLegacy.upload.run();
 
       // Wait for upload to complete with timeout
       const timeoutPromise = new Promise((resolve, reject) => {
@@ -686,7 +687,7 @@ describe('Upload API', () => {
       };
       
       // Override upload.getStatus()
-      upload.upload.getStatus = function() {
+      uploadLegacy.upload.getStatus = function() {
         return {
           queue: state.queue,
           running: Object.values(state.running),
@@ -695,7 +696,7 @@ describe('Upload API', () => {
       };
       
       // Store state for modification in tests
-      upload.upload._testState = state;
+      uploadLegacy.upload._testState = state;
     });
     
     test.skip('cancelItem marks an upload as canceled', async () => {
@@ -712,10 +713,10 @@ describe('Upload API', () => {
       };
       
       // Add to test queue
-      upload.upload._testState.queue.push(mockUpload);
+      uploadLegacy.upload._testState.queue.push(mockUpload);
       
       // Cancel the upload
-      upload.upload.cancelItem(123);
+      uploadLegacy.upload.cancelItem(123);
       
       // Check if it's marked as canceled
       expect(mockUpload.canceled).toBe(true);
@@ -736,16 +737,16 @@ describe('Upload API', () => {
       };
       
       // Add to test running state
-      upload.upload._testState.running[456] = mockUpload;
+      uploadLegacy.upload._testState.running[456] = mockUpload;
       
       // Pause the upload
-      upload.upload.pauseItem(456);
+      uploadLegacy.upload.pauseItem(456);
       
       // Check if it's paused
       expect(mockUpload.paused).toBe(true);
       
       // Resume the upload - create temp function for processing
-      upload.upload.resumeItem(456);
+      uploadLegacy.upload.resumeItem(456);
       
       // Check if it's resumed
       expect(mockUpload.paused).toBe(false);
@@ -767,17 +768,17 @@ describe('Upload API', () => {
       };
       
       // Add directly to failed list
-      upload.upload._testState.failed.push(mockFailedUpload);
+      uploadLegacy.upload._testState.failed.push(mockFailedUpload);
       
       // Verify it's in the failed list
-      expect(upload.upload.getStatus().failed.length).toBe(1);
+      expect(uploadLegacy.upload.getStatus().failed.length).toBe(1);
       
       // Mock the state modification functions
       const originalSplice = Array.prototype.splice;
       Array.prototype.splice = function(index, count) {
-        if (this === upload.upload._testState.failed && index === 0 && count === 1) {
+        if (this === uploadLegacy.upload._testState.failed && index === 0 && count === 1) {
           // Move item to queue on retry
-          upload.upload._testState.queue.push(mockFailedUpload);
+          uploadLegacy.upload._testState.queue.push(mockFailedUpload);
           
           // Reset failure and pending parts
           mockFailedUpload.failure = {};
@@ -793,14 +794,14 @@ describe('Upload API', () => {
       
       try {
         // Retry the upload
-        upload.upload.retryItem(999);
+        uploadLegacy.upload.retryItem(999);
         
         // Check if it moved to the queue and cleared from failed
-        expect(upload.upload.getStatus().failed.length).toBe(0);
-        expect(upload.upload.getStatus().queue.length).toBe(1);
+        expect(uploadLegacy.upload.getStatus().failed.length).toBe(0);
+        expect(uploadLegacy.upload.getStatus().queue.length).toBe(1);
         
         // Check if failure was reset and pending part was cleared
-        const queuedItem = upload.upload.getStatus().queue[0];
+        const queuedItem = uploadLegacy.upload.getStatus().queue[0];
         expect(queuedItem.failure).toEqual({});
         expect(queuedItem.b[0]).toBeUndefined();
       } finally {
@@ -901,10 +902,10 @@ describe('Upload API', () => {
       };
 
       // Add the file to the upload queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', testFile, {});
 
       // Start the upload process
-      upload.upload.run();
+      uploadLegacy.upload.run();
 
       // The upload should fail, not complete
       await expect(uploadPromise).rejects.toThrow();
@@ -1023,10 +1024,10 @@ describe('Upload API', () => {
       };
 
       // Add the file to the upload queue
-      const uploadPromise = upload.upload.append('Misc/Debug:testUpload', testFile, {});
+      const uploadPromise = uploadLegacy.upload.append('Misc/Debug:testUpload', testFile, {});
 
       // Start the upload process
-      upload.upload.run();
+      uploadLegacy.upload.run();
 
       // The upload should fail, not complete
       await expect(uploadPromise).rejects.toThrow();

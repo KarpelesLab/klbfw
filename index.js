@@ -9,6 +9,8 @@
 const internalFW = require('./fw-wrapper');
 const rest = require('./rest');
 const upload = require('./upload');
+const uploadMany = require('./upload-many');
+const uploadLegacy = require('./upload-legacy');
 const util = require('./util');
 const cookies = require('./cookies');
 
@@ -46,9 +48,9 @@ module.exports.restSSE = rest.restSSE;
 
 // Upload module exports
 /** @deprecated Use uploadFile() instead */
-module.exports.upload = upload.upload;
+module.exports.upload = uploadLegacy.upload;
 module.exports.uploadFile = upload.uploadFile;
-module.exports.uploadManyFiles = upload.uploadManyFiles;
+module.exports.uploadManyFiles = uploadMany.uploadManyFiles;
 
 // Utility exports
 module.exports.getI18N = util.getI18N;
