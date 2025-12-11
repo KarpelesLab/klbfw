@@ -45,7 +45,9 @@ module.exports.restGet = rest.restGet;   // New camelCase name
 module.exports.restSSE = rest.restSSE;
 
 // Upload module exports
+/** @deprecated Use uploadFile() instead */
 module.exports.upload = upload.upload;
+module.exports.uploadFile = upload.uploadFile;
 
 // Utility exports
 module.exports.getI18N = util.getI18N;

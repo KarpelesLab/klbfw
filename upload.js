@@ -358,7 +358,7 @@ async function uploadFile(api, buffer, method, params, context, options) {
             name: params.filename || 'file.txt',
             size: uint8Array.length,
             type: params.type || 'text/plain',
-            lastModified: Date.now(),
+            lastModified: Date.now() / 1000,
             content: uint8Array.buffer
         };
     }
@@ -368,7 +368,7 @@ async function uploadFile(api, buffer, method, params, context, options) {
             name: params.filename || 'file.bin',
             size: buffer.byteLength,
             type: params.type || 'application/octet-stream',
-            lastModified: Date.now(),
+            lastModified: Date.now() / 1000,
             content: buffer
         };
     }
@@ -378,7 +378,7 @@ async function uploadFile(api, buffer, method, params, context, options) {
             name: params.filename || 'file.bin',
             size: buffer.byteLength,
             type: params.type || 'application/octet-stream',
-            lastModified: Date.now(),
+            lastModified: Date.now() / 1000,
             content: buffer
         };
     }
@@ -388,27 +388,27 @@ async function uploadFile(api, buffer, method, params, context, options) {
             name: params.filename || 'file.bin',
             size: buffer.length,
             type: params.type || 'application/octet-stream',
-            lastModified: Date.now(),
+            lastModified: Date.now() / 1000,
             content: buffer
         };
     }
     // Handle browser File object
     else if (env.isBrowser && typeof File !== 'undefined' && buffer instanceof File) {
         fileObj = {
-            name: buffer.name || params.filename || 'file.bin',
+            name: params.filename || buffer.name || 'file.bin',
             size: buffer.size,
-            type: buffer.type || params.type || 'application/octet-stream',
-            lastModified: buffer.lastModified || Date.now(),
+            type: params.type || buffer.type || 'application/octet-stream',
+            lastModified: (buffer.lastModified || Date.now()) / 1000,
             browserFile: buffer  // Keep reference to original File for reading
         };
     }
     // Handle file-like object with content property
     else if (buffer && buffer.content !== undefined) {
         fileObj = {
-            name: buffer.name || params.filename || 'file.bin',
+            name: params.filename || buffer.name || 'file.bin',
             size: buffer.size || buffer.content.byteLength || buffer.content.length,
-            type: buffer.type || params.type || 'application/octet-stream',
-            lastModified: buffer.lastModified || Date.now(),
+            type: params.type || buffer.type || 'application/octet-stream',
+            lastModified: (buffer.lastModified || Date.now()) / 1000,
             content: buffer.content
         };
     }
@@ -418,7 +418,7 @@ async function uploadFile(api, buffer, method, params, context, options) {
             name: params.filename || 'file.bin',
             size: params.size || null,  // null means unknown size
             type: params.type || 'application/octet-stream',
-            lastModified: Date.now(),
+            lastModified: Date.now() / 1000,
             stream: buffer
         };
     }
@@ -430,7 +430,7 @@ async function uploadFile(api, buffer, method, params, context, options) {
     const uploadParams = { ...params };
     uploadParams.filename = fileObj.name;
     uploadParams.size = fileObj.size;
-    uploadParams.lastModified = fileObj.lastModified / 1000;
+    uploadParams.lastModified = fileObj.lastModified;
     uploadParams.type = fileObj.type;
 
     // Initialize upload with the server
