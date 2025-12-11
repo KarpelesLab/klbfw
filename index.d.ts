@@ -35,7 +35,38 @@ declare function restGet(name: string, params?: Record<string, any>): Promise<an
 declare function restSSE(name: string, method: 'GET', params?: Record<string, any>, context?: Record<string, any>): EventSource;
 
 // Upload module types
-interface UploadOptions {
+
+/** File input types supported by uploadFile */
+type UploadFileInput =
+  | ArrayBuffer
+  | Uint8Array
+  | File
+  | string
+  | { name?: string; size?: number; type?: string; content: ArrayBuffer | Uint8Array | string; lastModified?: number }
+  | NodeJS.ReadableStream;
+
+/** Options for uploadFile */
+interface UploadFileOptions {
+  /** Progress callback (0-1) */
+  onProgress?: (progress: number) => void;
+  /** Error callback - resolve to retry, reject to fail */
+  onError?: (error: Error, context: { phase: string; blockNum?: number; attempt: number }) => Promise<void>;
+}
+
+/** Options for uploadManyFiles */
+interface UploadManyFilesOptions extends UploadFileOptions {
+  /** Progress callback with file-level details */
+  onProgress?: (progress: { fileIndex: number; fileCount: number; fileProgress: number; totalProgress: number }) => void;
+  /** Called when each file completes */
+  onFileComplete?: (info: { fileIndex: number; fileCount: number; result: any }) => void;
+  /** Error callback - context includes fileIndex */
+  onError?: (error: Error, context: { fileIndex: number; phase: string; blockNum?: number; attempt: number }) => Promise<void>;
+  /** Maximum concurrent uploads (1-10, default 3) */
+  concurrency?: number;
+}
+
+/** @deprecated Use uploadFile() instead */
+interface UploadLegacyOptions {
   progress?: (progress: number) => void;
   endpoint?: string;
   headers?: Record<string, string>;
@@ -44,7 +75,40 @@ interface UploadOptions {
   params?: Record<string, any>;
 }
 
-declare function upload(file: File, options?: UploadOptions): Promise<any>;
+/** @deprecated Use uploadFile() instead */
+declare const upload: {
+  init(path: string, params?: Record<string, any>, notify?: (status: any) => void): Promise<any> | ((files: any) => Promise<any>);
+  append(path: string, file: File | object, params?: Record<string, any>, context?: Record<string, any>): Promise<any>;
+  run(): void;
+  getStatus(): { queue: any[]; running: any[]; failed: any[] };
+  resume(): void;
+  cancelItem(uploadId: number): void;
+  deleteItem(uploadId: number): void;
+  pauseItem(uploadId: number): void;
+  resumeItem(uploadId: number): void;
+  retryItem(uploadId: number): void;
+  onprogress?: (status: { queue: any[]; running: any[]; failed: any[] }) => void;
+};
+
+/** Upload a single file */
+declare function uploadFile(
+  api: string,
+  buffer: UploadFileInput,
+  method?: string,
+  params?: Record<string, any>,
+  context?: Record<string, any>,
+  options?: UploadFileOptions
+): Promise<any>;
+
+/** Upload multiple files with concurrency control */
+declare function uploadManyFiles(
+  api: string,
+  files: UploadFileInput[],
+  method?: string,
+  params?: Record<string, any>,
+  context?: Record<string, any>,
+  options?: UploadManyFilesOptions
+): Promise<any[]>;
 
 // Utility types
 declare function getI18N(key: string, args?: Record<string, any>): string;
@@ -78,6 +142,11 @@ export {
   restGet,
   restSSE,
   upload,
+  uploadFile,
+  uploadManyFiles,
   getI18N,
-  trimPrefix
+  trimPrefix,
+  UploadFileInput,
+  UploadFileOptions,
+  UploadManyFilesOptions
 };
