@@ -48,6 +48,7 @@ module.exports.restSSE = rest.restSSE;
 /** @deprecated Use uploadFile() instead */
 module.exports.upload = upload.upload;
 module.exports.uploadFile = upload.uploadFile;
+module.exports.uploadManyFiles = upload.uploadManyFiles;
 
 // Utility exports
 module.exports.getI18N = util.getI18N;
