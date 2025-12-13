@@ -1098,8 +1098,8 @@ describe('Upload API', () => {
 
       expect(apiCalls).toEqual(['init', 'PUT', 'Complete']);
       expect(result).toBeDefined();
-      expect(result.Blob__).toBe('blob-test-12345');
-      expect(result.SHA256).toBe('abc123');
+      expect(result.data.Blob__).toBe('blob-test-12345');
+      expect(result.data.SHA256).toBe('abc123');
       expect(capturedContentType).toBe('text/plain');
     });
 
@@ -1153,7 +1153,7 @@ describe('Upload API', () => {
       const result = await upload.uploadFile('Misc/Debug:testUpload', fileObj);
 
       expect(result).toBeDefined();
-      expect(result.Blob__).toBe('blob-fileobj-test');
+      expect(result.data.Blob__).toBe('blob-fileobj-test');
     });
 
     test('uploadFile rejects on HTTP error', async () => {
@@ -1246,7 +1246,7 @@ describe('Upload API', () => {
 
       expect(progressValues.length).toBeGreaterThan(0);
       expect(progressValues[progressValues.length - 1]).toBe(1);
-      expect(result.Blob__).toBe('blob-progress-test');
+      expect(result.data.Blob__).toBe('blob-progress-test');
     });
 
     test('uploadFile onError handler enables retry on failure', async () => {
@@ -1320,7 +1320,7 @@ describe('Upload API', () => {
       expect(errorContexts[0].phase).toBe('upload');
       expect(errorContexts[0].attempt).toBe(1);
       expect(errorContexts[1].attempt).toBe(2);
-      expect(result.Blob__).toBe('blob-retry-test');
+      expect(result.data.Blob__).toBe('blob-retry-test');
     });
 
     test('uploadFile onError rejection stops retry', async () => {
@@ -1380,8 +1380,8 @@ describe('Upload API', () => {
       });
 
       expect(result).toBeDefined();
-      expect(result.Blob__).toBeDefined();
-      expect(result.Size).toBe(String(testData.length));
+      expect(result.data.Blob__).toBeDefined();
+      expect(result.data.Size).toBe(String(testData.length));
     }, 30000);
 
     test('uploadFile handles AWS multipart upload', async () => {
@@ -1475,7 +1475,7 @@ describe('Upload API', () => {
       expect(apiCalls).toContain('initMultipart');
       expect(apiCalls).toContain('uploadPart');
       expect(apiCalls).toContain('handleComplete');
-      expect(result.Blob__).toBe('blob-aws-test');
+      expect(result.data.Blob__).toBe('blob-aws-test');
     });
   });
 });

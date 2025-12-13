@@ -50,6 +50,48 @@ npm run test:integration
 - **Standardized Naming**: Consistent use of camelCase with backward compatibility for legacy APIs
 - **Enhanced Error Handling**: More robust error handling and reporting
 
+## Migrating from upload.append() to uploadFile()
+
+The new `uploadFile()` function provides a simpler Promise-based API for file uploads. Here are the key differences when migrating:
+
+### Return Value
+
+**Legacy `upload.append()`** resolves with an upload object containing the result in `.final`:
+```javascript
+upload.append('Misc/Debug:testUpload', file)
+  .then(result => {
+    console.log(result.final);  // The completion response data
+  });
+```
+
+**New `uploadFile()`** resolves with the full REST response:
+```javascript
+uploadFile('Misc/Debug:testUpload', buffer)
+  .then(response => {
+    console.log(response.data);  // The completion response data
+  });
+```
+
+### Migration Example
+
+Before:
+```javascript
+upload.append('Misc/Debug:testUpload', file, params, context)
+  .then(up => {
+    const data = up.final;
+    // use data
+  });
+```
+
+After:
+```javascript
+uploadFile('Misc/Debug:testUpload', file, 'POST', params, context)
+  .then(response => {
+    const data = response.data;
+    // use data
+  });
+```
+
 # API
 
 ## REST API Methods

@@ -37,7 +37,7 @@ const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./up
  * @param {Function} [options.onError] - Error callback(error, context). Can return a Promise
  *   that, if resolved, will cause the failed operation to be retried. Context contains
  *   { phase, blockNum, attempt } for block uploads or { phase, attempt } for other operations.
- * @returns {Promise<Object>} - Resolves with the upload result data
+ * @returns {Promise<Object>} - Resolves with the full REST response
  *
  * @example
  * // Upload a buffer with filename
@@ -290,7 +290,7 @@ async function doPutUpload(file, uploadInfo, context, options) {
         attempt++;
         try {
             const completeResponse = await rest.rest(uploadInfo.Complete, 'POST', {}, context);
-            return completeResponse.data;
+            return completeResponse;
         } catch (error) {
             if (onError) {
                 await onError(error, { phase: 'complete', attempt });
@@ -542,7 +542,7 @@ async function doAwsUpload(file, uploadInfo, context, options) {
                 {},
                 context
             );
-            return finalResponse.data;
+            return finalResponse;
         } catch (error) {
             if (onError) {
                 await onError(error, { phase: 'handleComplete', attempt: handleAttempt });

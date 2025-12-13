@@ -90,7 +90,7 @@ declare const upload: {
   onprogress?: (status: { queue: any[]; running: any[]; failed: any[] }) => void;
 };
 
-/** Upload a single file */
+/** Upload a single file. Resolves with the full REST response. */
 declare function uploadFile(
   api: string,
   buffer: UploadFileInput,
