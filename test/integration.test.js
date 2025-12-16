@@ -202,12 +202,89 @@ describe('API Integration Tests', () => {
       // Since there might be an issue with the actual rest_get function in the test environment,
       // let's use the regular rest function with GET method, which we know works
       const response = await klbfw.rest('Misc/Debug:fixedString', 'GET');
-      
+
       expect(response).toHaveProperty('result', 'success');
       expect(response.data).toBe('fixed string');
-      
+
       console.log('Alternative rest_get response:', response.data);
     }, 10000);
+
+    conditionalTest('restSSE streams SSE events from Misc/Debug:sse', (done) => {
+      const events = [];
+      let completed = false;
+
+      // Override buildRestUrl to use absolute URL for this test
+      const originalBuildRestUrl = internal.buildRestUrl;
+      internal.buildRestUrl = jest.fn().mockImplementation((name) => {
+        return `${API_URL}/_rest/${name}`;
+      });
+
+      // Override checkAndRefreshToken
+      const originalCheckAndRefreshToken = internal.checkAndRefreshToken;
+      internal.checkAndRefreshToken = jest.fn().mockResolvedValue();
+
+      console.log('Starting restSSE test with Misc/Debug:sse (t=5)...');
+
+      // Pass t=5 to make the stream last only 5 seconds
+      const es = require('../rest').restSSE('Misc/Debug:sse', 'POST', { t: 5 });
+
+      // EventSource-like API
+      es.onopen = () => {
+        console.log('SSE connection opened');
+      };
+
+      es.onmessage = (event) => {
+        console.log('Received SSE event:', event.type, event.data.substring(0, 100));
+        events.push(event);
+      };
+
+      es.onerror = (event) => {
+        console.error('restSSE error:', event.error);
+        internal.buildRestUrl = originalBuildRestUrl;
+        internal.checkAndRefreshToken = originalCheckAndRefreshToken;
+        done(event.error);
+      };
+
+      // Also listen for custom event types
+      es.addEventListener('time', (event) => {
+        console.log('Received time event:', event.data.substring(0, 100));
+        events.push(event);
+      });
+
+      es.addEventListener('end', (event) => {
+        console.log('Received end event:', event.data.substring(0, 100));
+        events.push(event);
+      });
+
+      // Check for completion by polling readyState
+      const checkComplete = setInterval(() => {
+        if (es.readyState === es.CLOSED && !completed) {
+          completed = true;
+          clearInterval(checkComplete);
+
+          console.log(`restSSE completed with ${events.length} events`);
+
+          // Restore original functions
+          internal.buildRestUrl = originalBuildRestUrl;
+          internal.checkAndRefreshToken = originalCheckAndRefreshToken;
+
+          // Verify we received events
+          expect(events.length).toBeGreaterThan(0);
+
+          // Each event should have the expected structure
+          events.forEach(event => {
+            expect(event).toHaveProperty('type');
+            expect(event).toHaveProperty('data');
+          });
+
+          done();
+        }
+      }, 100);
+
+      expect(es).toHaveProperty('close');
+      expect(es).toHaveProperty('addEventListener');
+      expect(es).toHaveProperty('readyState');
+    }, 15000);
   });
   
   // Run upload tests with the same flag as other integration tests

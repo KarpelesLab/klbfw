@@ -6,7 +6,7 @@ const { setupSSRMode, setupClientMode, resetMocks } = require('./setup');
 // Mock the internal module
 jest.mock('../internal', () => ({
   checkSupport: jest.fn().mockReturnValue(true),
-  
+
   // Old function names for backward compatibility
   rest_url: jest.fn().mockReturnValue('/_rest/test'),
   internal_rest: jest.fn().mockImplementation(() => {
@@ -19,7 +19,7 @@ jest.mock('../internal', () => ({
       json: jest.fn().mockResolvedValue({ result: 'success', data: 'test-data' })
     });
   }),
-  
+
   // New function names
   buildRestUrl: jest.fn().mockReturnValue('/_rest/test'),
   internalRest: jest.fn().mockImplementation(() => {
@@ -32,10 +32,19 @@ jest.mock('../internal', () => ({
       json: jest.fn().mockResolvedValue({ result: 'success', data: 'test-data' })
     });
   }),
-  
+
   responseParse: jest.fn((response, resolve, reject) => {
     resolve({ success: true, data: 'test-data' });
-  })
+  }),
+
+  getTimezoneData: jest.fn().mockReturnValue('America/New_York;-0500'),
+  checkAndRefreshToken: jest.fn().mockResolvedValue()
+}));
+
+// Mock the fw-wrapper module for postSSE
+jest.mock('../fw-wrapper', () => ({
+  getToken: jest.fn().mockReturnValue('test-token'),
+  getContext: jest.fn().mockReturnValue({})
 }));
 
 describe('REST Module', () => {

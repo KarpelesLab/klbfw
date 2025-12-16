@@ -32,7 +32,50 @@ declare function setCookie(name: string, value: string, expires?: Date | number,
 declare function rest(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<any>;
 declare function rest_get(name: string, params?: Record<string, any>): Promise<any>; // Backward compatibility
 declare function restGet(name: string, params?: Record<string, any>): Promise<any>;
-declare function restSSE(name: string, method: 'GET', params?: Record<string, any>, context?: Record<string, any>): EventSource;
+
+/** SSE message event */
+interface SSEMessageEvent {
+  /** Event type */
+  type: string;
+  /** Event data */
+  data: string;
+  /** Last event ID */
+  lastEventId: string;
+  /** Origin */
+  origin: string;
+}
+
+/** SSE error event */
+interface SSEErrorEvent {
+  type: 'error';
+  error: Error | Record<string, any>;
+}
+
+/** EventSource-like object returned by restSSE */
+interface SSESource {
+  /** Handler called when connection opens */
+  onopen: ((event: { type: 'open' }) => void) | null;
+  /** Handler called for message events */
+  onmessage: ((event: SSEMessageEvent) => void) | null;
+  /** Handler called on error */
+  onerror: ((event: SSEErrorEvent) => void) | null;
+  /** Connection state: 0 = CONNECTING, 1 = OPEN, 2 = CLOSED */
+  readyState: number;
+  /** CONNECTING state constant */
+  readonly CONNECTING: 0;
+  /** OPEN state constant */
+  readonly OPEN: 1;
+  /** CLOSED state constant */
+  readonly CLOSED: 2;
+  /** Add event listener for specific event type */
+  addEventListener(type: string, listener: (event: SSEMessageEvent) => void): void;
+  /** Remove event listener */
+  removeEventListener(type: string, listener: (event: SSEMessageEvent) => void): void;
+  /** Close the connection */
+  close(): void;
+}
+
+declare function restSSE(name: string, method?: string, params?: Record<string, any>, context?: Record<string, any>): SSESource;
 
 // Upload module types
 
@@ -148,5 +191,8 @@ export {
   trimPrefix,
   UploadFileInput,
   UploadFileOptions,
-  UploadManyFilesOptions
+  UploadManyFilesOptions,
+  SSEMessageEvent,
+  SSEErrorEvent,
+  SSESource
 };

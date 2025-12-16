@@ -345,3 +345,4 @@ module.exports.padNumber = padNumber;
 module.exports.getTimezoneData = getTimezoneData;
 module.exports.buildRestUrl = buildRestUrl;
 module.exports.internalRest = internalRest;
+module.exports.checkAndRefreshToken = checkAndRefreshToken;
