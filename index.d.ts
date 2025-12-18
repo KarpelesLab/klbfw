@@ -62,6 +62,16 @@ interface RestError {
   [key: string]: any;
 }
 
+/** Server DateTime object with Unix milliseconds timestamp */
+interface DateTime {
+  unixms: string | number;
+  unix?: number;
+  us?: number;
+  iso?: string;
+  tz?: string;
+  full?: string;
+}
+
 declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<RestResponse<T>>;
 declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>; // Backward compatibility
 declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>;
@@ -225,6 +235,7 @@ export {
   RestPaging,
   RestResponse,
   RestError,
+  DateTime,
   UploadFileInput,
   UploadFileOptions,
   UploadManyFilesOptions,
