@@ -29,9 +29,9 @@ declare function hasCookie(name: string): boolean;
 declare function setCookie(name: string, value: string, expires?: Date | number, path?: string, domain?: string, secure?: boolean): void;
 
 // REST API types
-declare function rest(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<any>;
-declare function rest_get(name: string, params?: Record<string, any>): Promise<any>; // Backward compatibility
-declare function restGet(name: string, params?: Record<string, any>): Promise<any>;
+declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<T>;
+declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<T>; // Backward compatibility
+declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<T>;
 
 /** SSE message event */
 interface SSEMessageEvent {
