@@ -29,9 +29,42 @@ declare function hasCookie(name: string): boolean;
 declare function setCookie(name: string, value: string, expires?: Date | number, path?: string, domain?: string, secure?: boolean): void;
 
 // REST API types
-declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<T>;
-declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<T>; // Backward compatibility
-declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<T>;
+
+/** Paging information returned by list endpoints */
+interface RestPaging {
+  page_no: number;
+  count: number;
+  page_max: number;
+  results_per_page: number;
+}
+
+/** Successful REST API response */
+interface RestResponse<T = any> {
+  result: 'success' | 'redirect';
+  request_id: string;
+  time: number;
+  data: T;
+  paging?: RestPaging;
+  [key: string]: any;
+}
+
+/** REST API error (thrown on rejection) */
+interface RestError {
+  result: 'error';
+  exception: string;
+  error: string;
+  code: number;
+  token: string;
+  request: string;
+  message: Record<string, any>;
+  param?: string;
+  time: number;
+  [key: string]: any;
+}
+
+declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<RestResponse<T>>;
+declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>; // Backward compatibility
+declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>;
 
 /** SSE message event */
 interface SSEMessageEvent {
@@ -189,6 +222,9 @@ export {
   uploadManyFiles,
   getI18N,
   trimPrefix,
+  RestPaging,
+  RestResponse,
+  RestError,
   UploadFileInput,
   UploadFileOptions,
   UploadManyFilesOptions,
