@@ -72,6 +72,36 @@ interface DateTime {
   full?: string;
 }
 
+/** Extended integer representation for precise arithmetic */
+interface PriceXint {
+  v: string;
+  e: number;
+  f: number;
+}
+
+/** Base price value without tax breakdown */
+interface PriceValue {
+  value: string;
+  value_int: string;
+  value_cent: string;
+  value_disp: string;
+  value_xint: PriceXint;
+  display: string;
+  display_short: string;
+  currency: string;
+  unit: string;
+  has_vat: boolean;
+  tax_profile: string | null;
+}
+
+/** Full price object with optional tax breakdown */
+interface Price extends PriceValue {
+  raw?: PriceValue;
+  tax?: PriceValue;
+  tax_only?: PriceValue;
+  tax_rate?: number;
+}
+
 declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<RestResponse<T>>;
 declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>; // Backward compatibility
 declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>;
@@ -236,6 +266,9 @@ export {
   RestResponse,
   RestError,
   DateTime,
+  PriceXint,
+  PriceValue,
+  Price,
   UploadFileInput,
   UploadFileOptions,
   UploadManyFilesOptions,
