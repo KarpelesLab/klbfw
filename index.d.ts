@@ -73,10 +73,10 @@ interface DateTime {
 }
 
 /** Extended integer representation for precise arithmetic */
-interface PriceXint {
-  v: string;
-  e: number;
-  f: number;
+interface Xint {
+  v?: string;
+  e?: number;
+  f?: string | number;
 }
 
 /** Base price value without tax breakdown */
@@ -85,7 +85,7 @@ interface PriceValue {
   value_int: string;
   value_cent: string;
   value_disp: string;
-  value_xint: PriceXint;
+  value_xint: Xint;
   display: string;
   display_short: string;
   currency: string;
@@ -266,7 +266,7 @@ export {
   RestResponse,
   RestError,
   DateTime,
-  PriceXint,
+  Xint,
   PriceValue,
   Price,
   UploadFileInput,
