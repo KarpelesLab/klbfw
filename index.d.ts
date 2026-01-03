@@ -61,6 +61,25 @@ interface RestResponse<T = any> {
   [key: string]: any;
 }
 
+/**
+ * Context object for REST API calls.
+ * Keys are single characters representing different context dimensions.
+ */
+interface Context {
+  /** Branch identifier */
+  b?: string;
+  /** Currency code (e.g., 'USD', 'EUR') */
+  c?: string;
+  /** Group identifier */
+  g?: string;
+  /** Language/locale code (e.g., 'en-US', 'ja-JP') */
+  l?: string;
+  /** Timezone identifier (e.g., 'Asia/Tokyo', 'America/New_York') */
+  t?: string;
+  /** User identifier */
+  u?: string;
+}
+
 /** REST API error object (thrown on promise rejection) */
 interface RestError {
   /** Always 'error' for error responses */
@@ -172,7 +191,7 @@ interface Price extends PriceValue {
   tax_rate?: number;
 }
 
-declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Record<string, any>): Promise<RestResponse<T>>;
+declare function rest<T = any>(name: string, verb: string, params?: Record<string, any>, context?: Context): Promise<RestResponse<T>>;
 declare function rest_get<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>; // Backward compatibility
 declare function restGet<T = any>(name: string, params?: Record<string, any>): Promise<RestResponse<T>>;
 
@@ -218,7 +237,7 @@ interface SSESource {
   close(): void;
 }
 
-declare function restSSE(name: string, method?: string, params?: Record<string, any>, context?: Record<string, any>): SSESource;
+declare function restSSE(name: string, method?: string, params?: Record<string, any>, context?: Context): SSESource;
 
 // Upload module types
 
@@ -266,7 +285,7 @@ interface UploadLegacyOptions {
 /** @deprecated Use uploadFile() instead */
 declare const upload: {
   init(path: string, params?: Record<string, any>, notify?: (status: any) => void): Promise<any> | ((files: any) => Promise<any>);
-  append(path: string, file: File | object, params?: Record<string, any>, context?: Record<string, any>): Promise<any>;
+  append(path: string, file: File | object, params?: Record<string, any>, context?: Context): Promise<any>;
   run(): void;
   getStatus(): { queue: any[]; running: any[]; failed: any[] };
   resume(): void;
@@ -284,7 +303,7 @@ declare function uploadFile(
   buffer: UploadFileInput,
   method?: string,
   params?: Record<string, any>,
-  context?: Record<string, any>,
+  context?: Context,
   options?: UploadFileOptions
 ): Promise<any>;
 
@@ -294,7 +313,7 @@ declare function uploadManyFiles(
   files: UploadFileInput[],
   method?: string,
   params?: Record<string, any>,
-  context?: Record<string, any>,
+  context?: Context,
   options?: UploadManyFilesOptions
 ): Promise<any[]>;
 
@@ -334,6 +353,7 @@ export {
   uploadManyFiles,
   getI18N,
   trimPrefix,
+  Context,
   RestPaging,
   RestResponse,
   RestError,
