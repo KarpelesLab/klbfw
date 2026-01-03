@@ -40,7 +40,9 @@ const { uploadFile } = require('./upload');
  *   Context includes { fileIndex, phase, attempt } where phase is 'file' for file-level errors,
  *   or 'upload'/'init'/'complete' for block-level errors (also includes blockNum for 'upload').
  * @param {number} [options.concurrency=3] - Maximum concurrent uploads (1-10)
- * @returns {Promise<Array>} - Resolves with array of upload results in same order as input files
+ * @param {AbortSignal} [options.signal] - AbortSignal for cancellation. Use AbortController to cancel.
+ * @returns {Promise<Array>} - Resolves with array of upload results in same order as input files.
+ *   Rejects with AbortError if cancelled.
  *
  * @example
  * // Upload multiple files from a file input
@@ -76,7 +78,14 @@ async function uploadManyFiles(api, files, method, params, context, options) {
     }
 
     const concurrency = Math.min(Math.max(options.concurrency || 3, 1), 10);
-    const { onProgress, onFileComplete, onError } = options;
+    const { onProgress, onFileComplete, onError, signal } = options;
+
+    // Check if already aborted
+    if (signal && signal.aborted) {
+        const error = new Error('Upload aborted');
+        error.name = 'AbortError';
+        throw error;
+    }
 
     // Results array in same order as input
     const results = new Array(fileCount);
@@ -122,6 +131,11 @@ async function uploadManyFiles(api, files, method, params, context, options) {
                 }
             };
 
+            // Pass signal to each file upload
+            if (signal) {
+                fileOptions.signal = signal;
+            }
+
             // Wrap onError to include fileIndex for block-level errors
             if (onError) {
                 fileOptions.onError = (error, ctx) => {
@@ -142,6 +156,11 @@ async function uploadManyFiles(api, files, method, params, context, options) {
 
                 return result;
             } catch (error) {
+                // Re-throw abort errors immediately without retry
+                if (error.name === 'AbortError') {
+                    throw error;
+                }
+
                 // Give onError a chance to retry the whole file
                 if (onError) {
                     try {
@@ -161,19 +180,37 @@ async function uploadManyFiles(api, files, method, params, context, options) {
         }
     };
 
+    // Track if aborted
+    let aborted = false;
+    let abortError = null;
+
     // Process files with concurrency limit
     const processQueue = async () => {
         const workers = [];
 
         for (let i = 0; i < concurrency; i++) {
             workers.push((async () => {
-                while (nextIndex < fileCount) {
+                while (nextIndex < fileCount && !aborted) {
+                    // Check for abort before starting next file
+                    if (signal && signal.aborted) {
+                        aborted = true;
+                        abortError = new Error('Upload aborted');
+                        abortError.name = 'AbortError';
+                        return;
+                    }
+
                     const fileIndex = nextIndex++;
                     running.add(fileIndex);
 
                     try {
                         await uploadOne(fileIndex);
                     } catch (error) {
+                        // If aborted, stop processing and propagate
+                        if (error.name === 'AbortError') {
+                            aborted = true;
+                            abortError = error;
+                            return;
+                        }
                         // Continue with next file even if one fails
                         // Error is already stored in results
                     } finally {
@@ -187,6 +224,11 @@ async function uploadManyFiles(api, files, method, params, context, options) {
     };
 
     await processQueue();
+
+    // If aborted, throw the abort error
+    if (aborted && abortError) {
+        throw abortError;
+    }
 
     // Check if any uploads failed
     const errors = results.filter(r => r && r.error).map(r => r.error);

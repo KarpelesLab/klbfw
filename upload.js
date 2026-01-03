@@ -37,7 +37,8 @@ const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./up
  * @param {Function} [options.onError] - Error callback(error, context). Can return a Promise
  *   that, if resolved, will cause the failed operation to be retried. Context contains
  *   { phase, blockNum, attempt } for block uploads or { phase, attempt } for other operations.
- * @returns {Promise<Object>} - Resolves with the full REST response
+ * @param {AbortSignal} [options.signal] - AbortSignal for cancellation. Use AbortController to cancel.
+ * @returns {Promise<Object>} - Resolves with the full REST response. Rejects with AbortError if cancelled.
  *
  * @example
  * // Upload a buffer with filename
@@ -76,12 +77,38 @@ const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./up
  *   type: 'application/octet-stream',
  *   size: 2199023255552  // optional: if known, enables optimal block sizing
  * });
+ *
+ * @example
+ * // Upload with cancellation support
+ * const controller = new AbortController();
+ * const uploadPromise = uploadFile('Misc/Debug:testUpload', buffer, 'POST', {
+ *   filename: 'large-file.bin'
+ * }, null, {
+ *   signal: controller.signal,
+ *   onProgress: (progress) => console.log(`${Math.round(progress * 100)}%`)
+ * });
+ * // Cancel after 5 seconds
+ * setTimeout(() => controller.abort(), 5000);
+ * try {
+ *   const result = await uploadPromise;
+ * } catch (err) {
+ *   if (err.name === 'AbortError') {
+ *     console.log('Upload was cancelled');
+ *   }
+ * }
  */
 async function uploadFile(api, buffer, method, params, context, options) {
     // Handle default values
     method = method || 'POST';
     params = params || {};
     options = options || {};
+
+    // Check if already aborted
+    if (options.signal && options.signal.aborted) {
+        const error = new Error('Upload aborted');
+        error.name = 'AbortError';
+        throw error;
+    }
 
     // Get context from framework if not provided, and add available values
     if (!context) {
@@ -202,7 +229,16 @@ async function uploadFile(api, buffer, method, params, context, options) {
  * @private
  */
 async function doPutUpload(file, uploadInfo, context, options) {
-    const { onProgress, onError } = options;
+    const { onProgress, onError, signal } = options;
+
+    // Helper to check abort status
+    const checkAbort = () => {
+        if (signal && signal.aborted) {
+            const error = new Error('Upload aborted');
+            error.name = 'AbortError';
+            throw error;
+        }
+    };
 
     // Calculate block size
     // - If size known: use server's Blocksize or file size
@@ -228,6 +264,9 @@ async function doPutUpload(file, uploadInfo, context, options) {
         const pendingUploads = [];
 
         while (!streamEnded || pendingUploads.length > 0) {
+            // Check for abort before reading more data
+            checkAbort();
+
             // Read and start uploads up to maxConcurrent
             while (!streamEnded && pendingUploads.length < maxConcurrent) {
                 const chunkData = await readChunkFromStream(file.stream, blockSize);
@@ -243,7 +282,7 @@ async function doPutUpload(file, uploadInfo, context, options) {
                 // Only add Content-Range for multi-block uploads
                 const useContentRange = blocks === null || blocks > 1;
                 const uploadPromise = uploadPutBlockWithDataAndRetry(
-                    uploadInfo, currentBlock, startByte, chunkData, file.type, onError, useContentRange
+                    uploadInfo, currentBlock, startByte, chunkData, file.type, onError, useContentRange, signal
                 ).then(() => {
                     completedBlocks++;
                     if (onProgress && blocks) {
@@ -267,10 +306,13 @@ async function doPutUpload(file, uploadInfo, context, options) {
     } else {
         // Buffer-based upload: original logic
         for (let i = 0; i < blocks; i += maxConcurrent) {
+            // Check for abort before starting next batch
+            checkAbort();
+
             const batch = [];
             for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
                 batch.push(
-                    uploadPutBlockWithRetry(file, uploadInfo, j, blockSize, onError)
+                    uploadPutBlockWithRetry(file, uploadInfo, j, blockSize, onError, signal)
                         .then(() => {
                             completedBlocks++;
                             if (onProgress) {
@@ -285,6 +327,8 @@ async function doPutUpload(file, uploadInfo, context, options) {
     }
 
     // All blocks done, call completion with retry support
+    checkAbort();
+
     let attempt = 0;
     while (true) {
         attempt++;
@@ -292,6 +336,8 @@ async function doPutUpload(file, uploadInfo, context, options) {
             const completeResponse = await rest.rest(uploadInfo.Complete, 'POST', {}, context);
             return completeResponse;
         } catch (error) {
+            // Check if aborted during completion
+            checkAbort();
             if (onError) {
                 await onError(error, { phase: 'complete', attempt });
                 // If onError resolves, retry
@@ -306,7 +352,7 @@ async function doPutUpload(file, uploadInfo, context, options) {
  * Upload a single block via PUT with pre-read data and retry support
  * @private
  */
-async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, data, contentType, onError, useContentRange) {
+async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, data, contentType, onError, useContentRange, signal) {
     let attempt = 0;
     while (true) {
         attempt++;
@@ -320,11 +366,16 @@ async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, d
                 headers['Content-Range'] = `bytes ${startByte}-${startByte + data.byteLength - 1}/*`;
             }
 
-            const response = await utils.fetch(uploadInfo.PUT, {
+            const fetchOptions = {
                 method: 'PUT',
                 body: data,
                 headers: headers
-            });
+            };
+            if (signal) {
+                fetchOptions.signal = signal;
+            }
+
+            const response = await utils.fetch(uploadInfo.PUT, fetchOptions);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -333,6 +384,10 @@ async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, d
             await response.text();
             return;
         } catch (error) {
+            // Re-throw abort errors immediately
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
                 continue;
@@ -346,13 +401,17 @@ async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, d
  * Upload a single block via PUT with retry support
  * @private
  */
-async function uploadPutBlockWithRetry(file, uploadInfo, blockNum, blockSize, onError) {
+async function uploadPutBlockWithRetry(file, uploadInfo, blockNum, blockSize, onError, signal) {
     let attempt = 0;
     while (true) {
         attempt++;
         try {
-            return await uploadPutBlock(file, uploadInfo, blockNum, blockSize);
+            return await uploadPutBlock(file, uploadInfo, blockNum, blockSize, signal);
         } catch (error) {
+            // Re-throw abort errors immediately
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
                 // If onError resolves, retry
@@ -367,7 +426,7 @@ async function uploadPutBlockWithRetry(file, uploadInfo, blockNum, blockSize, on
  * Upload a single block via PUT
  * @private
  */
-async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
+async function uploadPutBlock(file, uploadInfo, blockNum, blockSize, signal) {
     const startByte = blockNum * blockSize;
     const endByte = Math.min(startByte + blockSize, file.size);
 
@@ -383,11 +442,16 @@ async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
         headers['Content-Range'] = `bytes ${startByte}-${endByte - 1}/*`;
     }
 
-    const response = await utils.fetch(uploadInfo.PUT, {
+    const fetchOptions = {
         method: 'PUT',
         body: arrayBuffer,
         headers: headers
-    });
+    };
+    if (signal) {
+        fetchOptions.signal = signal;
+    }
+
+    const response = await utils.fetch(uploadInfo.PUT, fetchOptions);
 
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -401,7 +465,25 @@ async function uploadPutBlock(file, uploadInfo, blockNum, blockSize) {
  * @private
  */
 async function doAwsUpload(file, uploadInfo, context, options) {
-    const { onProgress, onError } = options;
+    const { onProgress, onError, signal } = options;
+
+    // Helper to check abort status
+    const checkAbort = () => {
+        if (signal && signal.aborted) {
+            const error = new Error('Upload aborted');
+            error.name = 'AbortError';
+            throw error;
+        }
+    };
+
+    // Helper to abort AWS multipart upload (best effort, don't throw on failure)
+    const abortMultipartUpload = async (uploadId) => {
+        try {
+            await awsReq(uploadInfo, 'DELETE', `uploadId=${uploadId}`, '', null, context);
+        } catch (e) {
+            // Ignore errors during abort - this is cleanup
+        }
+    };
 
     // Calculate block size
     // - If size known: target ~10k parts, min 5MB
@@ -417,6 +499,9 @@ async function doAwsUpload(file, uploadInfo, context, options) {
         blockSize = 551550976;  // 526MB
     }
 
+    // Check for abort before starting
+    checkAbort();
+
     // Initialize multipart upload with retry support
     let uploadId;
     let initAttempt = 0;
@@ -429,13 +514,18 @@ async function doAwsUpload(file, uploadInfo, context, options) {
                 'uploads=',
                 '',
                 { 'Content-Type': file.type || 'application/octet-stream', 'X-Amz-Acl': 'private' },
-                context
+                context,
+                signal
             );
             const initXml = await initResponse.text();
             const dom = utils.parseXML(initXml);
             uploadId = dom.querySelector('UploadId').innerHTML;
             break;
         } catch (error) {
+            // Re-throw abort errors immediately
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'init', attempt: initAttempt });
                 continue;
@@ -448,65 +538,83 @@ async function doAwsUpload(file, uploadInfo, context, options) {
     const maxConcurrent = 3;
     let completedBlocks = 0;
 
-    // Stream-based upload: read sequentially, upload in parallel
-    if (file.stream) {
-        let blockNum = 0;
-        let streamEnded = false;
-        const pendingUploads = [];
+    // Wrap upload in try/catch to abort multipart upload on cancel
+    try {
+        // Stream-based upload: read sequentially, upload in parallel
+        if (file.stream) {
+            let blockNum = 0;
+            let streamEnded = false;
+            const pendingUploads = [];
 
-        while (!streamEnded || pendingUploads.length > 0) {
-            // Read and start uploads up to maxConcurrent
-            while (!streamEnded && pendingUploads.length < maxConcurrent) {
-                const chunkData = await readChunkFromStream(file.stream, blockSize);
-                if (chunkData === null) {
-                    streamEnded = true;
-                    break;
+            while (!streamEnded || pendingUploads.length > 0) {
+                // Check for abort before reading more data
+                checkAbort();
+
+                // Read and start uploads up to maxConcurrent
+                while (!streamEnded && pendingUploads.length < maxConcurrent) {
+                    const chunkData = await readChunkFromStream(file.stream, blockSize);
+                    if (chunkData === null) {
+                        streamEnded = true;
+                        break;
+                    }
+
+                    const currentBlock = blockNum++;
+                    const uploadPromise = uploadAwsBlockWithDataAndRetry(
+                        uploadInfo, uploadId, currentBlock, chunkData, context, onError, signal
+                    ).then(etag => {
+                        etags[currentBlock] = etag;
+                        completedBlocks++;
+                        if (onProgress && blocks) {
+                            onProgress(completedBlocks / blocks);
+                        }
+                    });
+
+                    pendingUploads.push(uploadPromise);
                 }
 
-                const currentBlock = blockNum++;
-                const uploadPromise = uploadAwsBlockWithDataAndRetry(
-                    uploadInfo, uploadId, currentBlock, chunkData, context, onError
-                ).then(etag => {
-                    etags[currentBlock] = etag;
-                    completedBlocks++;
-                    if (onProgress && blocks) {
-                        onProgress(completedBlocks / blocks);
-                    }
-                });
-
-                pendingUploads.push(uploadPromise);
+                // Wait for at least one upload to complete before reading more
+                if (pendingUploads.length > 0) {
+                    // Create indexed promises that return their index when done
+                    const indexedPromises = pendingUploads.map((p, idx) => p.then(() => idx));
+                    const completedIdx = await Promise.race(indexedPromises);
+                    pendingUploads.splice(completedIdx, 1);
+                }
             }
 
-            // Wait for at least one upload to complete before reading more
-            if (pendingUploads.length > 0) {
-                // Create indexed promises that return their index when done
-                const indexedPromises = pendingUploads.map((p, idx) => p.then(() => idx));
-                const completedIdx = await Promise.race(indexedPromises);
-                pendingUploads.splice(completedIdx, 1);
+            blocks = blockNum;  // Now we know the total
+        } else {
+            // Buffer-based upload: original logic
+            for (let i = 0; i < blocks; i += maxConcurrent) {
+                // Check for abort before starting next batch
+                checkAbort();
+
+                const batch = [];
+                for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
+                    batch.push(
+                        uploadAwsBlockWithRetry(file, uploadInfo, uploadId, j, blockSize, context, onError, signal)
+                            .then(etag => {
+                                etags[j] = etag;
+                                completedBlocks++;
+                                if (onProgress) {
+                                    onProgress(completedBlocks / blocks);
+                                }
+                            })
+                    );
+                }
+
+                await Promise.all(batch);
             }
         }
-
-        blocks = blockNum;  // Now we know the total
-    } else {
-        // Buffer-based upload: original logic
-        for (let i = 0; i < blocks; i += maxConcurrent) {
-            const batch = [];
-            for (let j = i; j < Math.min(i + maxConcurrent, blocks); j++) {
-                batch.push(
-                    uploadAwsBlockWithRetry(file, uploadInfo, uploadId, j, blockSize, context, onError)
-                        .then(etag => {
-                            etags[j] = etag;
-                            completedBlocks++;
-                            if (onProgress) {
-                                onProgress(completedBlocks / blocks);
-                            }
-                        })
-                );
-            }
-
-            await Promise.all(batch);
+    } catch (error) {
+        // On abort, try to clean up the AWS multipart upload
+        if (error.name === 'AbortError') {
+            await abortMultipartUpload(uploadId);
         }
+        throw error;
     }
+
+    // Check for abort before completing
+    checkAbort();
 
     // Complete multipart upload with retry support
     let xml = '<CompleteMultipartUpload>';
@@ -519,10 +627,15 @@ async function doAwsUpload(file, uploadInfo, context, options) {
     while (true) {
         completeAttempt++;
         try {
-            const completeResponse = await awsReq(uploadInfo, 'POST', `uploadId=${uploadId}`, xml, null, context);
+            const completeResponse = await awsReq(uploadInfo, 'POST', `uploadId=${uploadId}`, xml, null, context, signal);
             await completeResponse.text();
             break;
         } catch (error) {
+            // On abort, try to clean up the AWS multipart upload
+            if (error.name === 'AbortError') {
+                await abortMultipartUpload(uploadId);
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'complete', attempt: completeAttempt });
                 continue;
@@ -530,6 +643,9 @@ async function doAwsUpload(file, uploadInfo, context, options) {
             throw error;
         }
     }
+
+    // Check for abort before server-side completion
+    checkAbort();
 
     // Call server-side completion handler with retry support
     let handleAttempt = 0;
@@ -544,6 +660,8 @@ async function doAwsUpload(file, uploadInfo, context, options) {
             );
             return finalResponse;
         } catch (error) {
+            // Check if aborted during completion
+            checkAbort();
             if (onError) {
                 await onError(error, { phase: 'handleComplete', attempt: handleAttempt });
                 continue;
@@ -557,7 +675,7 @@ async function doAwsUpload(file, uploadInfo, context, options) {
  * Upload a block to AWS S3 with pre-read data and retry support
  * @private
  */
-async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, data, context, onError) {
+async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, data, context, onError, signal) {
     let attempt = 0;
     while (true) {
         attempt++;
@@ -569,7 +687,8 @@ async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, da
                 `partNumber=${awsPartNumber}&uploadId=${uploadId}`,
                 data,
                 null,
-                context
+                context,
+                signal
             );
 
             if (!response.ok) {
@@ -580,6 +699,10 @@ async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, da
             await response.text();
             return etag;
         } catch (error) {
+            // Re-throw abort errors immediately
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
                 continue;
@@ -593,13 +716,17 @@ async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, da
  * Upload a single block to AWS S3 with retry support
  * @private
  */
-async function uploadAwsBlockWithRetry(file, uploadInfo, uploadId, blockNum, blockSize, context, onError) {
+async function uploadAwsBlockWithRetry(file, uploadInfo, uploadId, blockNum, blockSize, context, onError, signal) {
     let attempt = 0;
     while (true) {
         attempt++;
         try {
-            return await uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context);
+            return await uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context, signal);
         } catch (error) {
+            // Re-throw abort errors immediately
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
                 continue;
@@ -613,7 +740,7 @@ async function uploadAwsBlockWithRetry(file, uploadInfo, uploadId, blockNum, blo
  * Upload a single block to AWS S3
  * @private
  */
-async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context) {
+async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, context, signal) {
     const startByte = blockNum * blockSize;
     const endByte = Math.min(startByte + blockSize, file.size);
     const awsPartNumber = blockNum + 1; // AWS uses 1-based part numbers
@@ -626,7 +753,8 @@ async function uploadAwsBlock(file, uploadInfo, uploadId, blockNum, blockSize, c
         `partNumber=${awsPartNumber}&uploadId=${uploadId}`,
         arrayBuffer,
         null,
-        context
+        context,
+        signal
     );
 
     if (!response.ok) {

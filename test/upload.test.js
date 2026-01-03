@@ -1477,5 +1477,117 @@ describe('Upload API', () => {
       expect(apiCalls).toContain('handleComplete');
       expect(result.data.Blob__).toBe('blob-aws-test');
     });
+
+    test('uploadFile rejects immediately when signal is already aborted', async () => {
+      const testContent = Buffer.from('Test content');
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+          filename: 'test.bin'
+        }, null, {
+          signal: controller.signal
+        })
+      ).rejects.toThrow('Upload aborted');
+
+      // Verify fetch was never called
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('uploadFile can be cancelled during PUT upload', async () => {
+      const testContent = Buffer.from('Test content for cancellation');
+      const controller = new AbortController();
+      let putCalled = false;
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          putCalled = true;
+          // Simulate the abort by checking if signal is aborted
+          if (options.signal && options.signal.aborted) {
+            const error = new Error('The operation was aborted');
+            error.name = 'AbortError';
+            return Promise.reject(error);
+          }
+          // Abort during PUT
+          controller.abort();
+          const error = new Error('The operation was aborted');
+          error.name = 'AbortError';
+          return Promise.reject(error);
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      await expect(
+        upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+          filename: 'test.bin'
+        }, null, {
+          signal: controller.signal
+        })
+      ).rejects.toThrow();
+
+      expect(putCalled).toBe(true);
+    });
+
+    test('uploadFile abort error is not retried even with onError handler', async () => {
+      const testContent = Buffer.from('Test content');
+      const controller = new AbortController();
+      let errorHandlerCalled = false;
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          controller.abort();
+          const error = new Error('The operation was aborted');
+          error.name = 'AbortError';
+          return Promise.reject(error);
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      try {
+        await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+          filename: 'test.bin'
+        }, null, {
+          signal: controller.signal,
+          onError: async (error, ctx) => {
+            errorHandlerCalled = true;
+            // Even if we resolve, abort errors should not be retried
+          }
+        });
+      } catch (e) {
+        expect(e.name).toBe('AbortError');
+      }
+
+      // onError should not be called for abort errors
+      expect(errorHandlerCalled).toBe(false);
+    });
   });
 });

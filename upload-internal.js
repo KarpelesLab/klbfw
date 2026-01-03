@@ -222,9 +222,10 @@ const utils = {
  * @param {*} body - Request body
  * @param {Object} headers - Request headers
  * @param {Object} context - Request context
+ * @param {AbortSignal} [signal] - Optional AbortSignal for cancellation
  * @returns {Promise} - Request promise
  */
-function awsReq(upInfo, method, query, body, headers, context) {
+function awsReq(upInfo, method, query, body, headers, context, signal) {
     headers = headers || {};
     context = context || {};
 
@@ -305,11 +306,15 @@ function awsReq(upInfo, method, query, body, headers, context) {
             headers["Authorization"] = response.data.authorization;
 
             // Make the actual request to S3
-            return utils.fetch(url, {
+            const fetchOptions = {
                 method,
                 body,
                 headers
-            });
+            };
+            if (signal) {
+                fetchOptions.signal = signal;
+            }
+            return utils.fetch(url, fetchOptions);
         })
         .then(resolve)
         .catch(reject);

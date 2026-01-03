@@ -237,6 +237,8 @@ interface UploadFileOptions {
   onProgress?: (progress: number) => void;
   /** Error callback - resolve to retry, reject to fail */
   onError?: (error: Error, context: { phase: string; blockNum?: number; attempt: number }) => Promise<void>;
+  /** AbortSignal for cancellation - use AbortController.signal */
+  signal?: AbortSignal;
 }
 
 /** Options for uploadManyFiles */
