@@ -1249,7 +1249,73 @@ describe('Upload API', () => {
       expect(result.data.Blob__).toBe('blob-progress-test');
     });
 
+    test('uploadFile automatically retries transient failures', async () => {
+      // Verify that transient failures (< 3) are retried automatically without onError
+      const testContent = Buffer.from('Test content for auto-retry');
+      let putAttempts = 0;
+
+      global.fetch = jest.fn().mockImplementation((url, options) => {
+        if (url.includes('Misc/Debug:testUpload') && options?.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: {
+                PUT: 'https://example.com/upload',
+                Complete: 'Blob/Upload/TEST:handleComplete'
+              }
+            }),
+            text: () => Promise.resolve('')
+          });
+        } else if (options?.method === 'PUT') {
+          putAttempts++;
+          if (putAttempts < 3) {
+            // Fail first 2 attempts (will be auto-retried)
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              statusText: 'Internal Server Error',
+              headers: { get: () => null },
+              text: () => Promise.resolve('')
+            });
+          }
+          // Succeed on 3rd attempt
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => null },
+            text: () => Promise.resolve('')
+          });
+        } else if (url.includes('handleComplete')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve({
+              result: 'success',
+              data: { Blob__: 'blob-auto-retry-test' }
+            }),
+            text: () => Promise.resolve('')
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      // No onError handler - automatic retry should handle it
+      const result = await upload.uploadFile('Misc/Debug:testUpload', testContent, 'POST', {
+        filename: 'test.bin'
+      });
+
+      expect(putAttempts).toBe(3); // 2 failures + 1 success
+      expect(result.data.Blob__).toBe('blob-auto-retry-test');
+    }, 30000); // Increase timeout due to retry delays
+
     test('uploadFile onError handler enables retry on failure', async () => {
+      // With automatic retry, the first 3 attempts are retried automatically.
+      // onError is only called after 3 automatic retries fail.
+      // This test verifies that onError can trigger additional retries.
       const testContent = Buffer.from('Test content for retry');
       let putAttempts = 0;
       const errorContexts = [];
@@ -1271,8 +1337,8 @@ describe('Upload API', () => {
           });
         } else if (options?.method === 'PUT') {
           putAttempts++;
-          if (putAttempts < 3) {
-            // Fail first 2 attempts
+          if (putAttempts < 4) {
+            // Fail first 3 attempts (automatic retries), then onError is triggered
             return Promise.resolve({
               ok: false,
               status: 500,
@@ -1281,7 +1347,7 @@ describe('Upload API', () => {
               text: () => Promise.resolve('')
             });
           }
-          // Succeed on 3rd attempt
+          // Succeed on 4th attempt (after onError resolves and resets counter)
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -1308,22 +1374,20 @@ describe('Upload API', () => {
       }, null, {
         onError: async (error, ctx) => {
           errorContexts.push(ctx);
-          if (ctx.attempt >= 3) {
-            throw error; // Give up after 3 attempts
-          }
-          // Resolve to trigger retry
+          // Resolve to trigger retry (counter will reset)
         }
       });
 
-      expect(putAttempts).toBe(3);
-      expect(errorContexts.length).toBe(2); // 2 failures before success
+      expect(putAttempts).toBe(4); // 3 auto-retries + 1 after onError
+      expect(errorContexts.length).toBe(1); // onError called once after 3 auto-retries
       expect(errorContexts[0].phase).toBe('upload');
-      expect(errorContexts[0].attempt).toBe(1);
-      expect(errorContexts[1].attempt).toBe(2);
+      expect(errorContexts[0].attempt).toBe(3); // attempt is 3 when onError is called
       expect(result.data.Blob__).toBe('blob-retry-test');
-    });
+    }, 30000); // Increase timeout due to retry delays
 
     test('uploadFile onError rejection stops retry', async () => {
+      // onError is called after 3 automatic retries fail.
+      // This test verifies that throwing in onError stops further retries.
       const testContent = Buffer.from('Test content');
 
       global.fetch = jest.fn().mockImplementation((url, options) => {
@@ -1362,7 +1426,7 @@ describe('Upload API', () => {
           }
         })
       ).rejects.toThrow('Giving up immediately');
-    });
+    }, 30000); // Increase timeout due to automatic retry delays
 
     test('uploadFile uploads a readable stream via PUT method', async () => {
       // Use real fetch with API prefix

@@ -14,6 +14,17 @@ const fwWrapper = require('./fw-wrapper');
 const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./upload-internal');
 
 /**
+ * Sleep for a specified duration with exponential backoff and jitter
+ * @private
+ */
+function retryDelay(attempt, maxRetries) {
+    // Exponential backoff: 1s, 2s, 4s (capped at 4s) plus random jitter (0-500ms)
+    const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+    const jitter = Math.random() * 500;
+    return new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
+}
+
+/**
  * Simple file upload function
  *
  * This function provides a straightforward way to upload a file and get a Promise
@@ -34,9 +45,10 @@ const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./up
  * @param {Object} [context=null] - Request context (uses default context if not provided)
  * @param {Object} [options={}] - Upload options
  * @param {Function} [options.onProgress] - Progress callback(progress) where progress is 0-1
- * @param {Function} [options.onError] - Error callback(error, context). Can return a Promise
- *   that, if resolved, will cause the failed operation to be retried. Context contains
- *   { phase, blockNum, attempt } for block uploads or { phase, attempt } for other operations.
+ * @param {Function} [options.onError] - Error callback(error, context). Called only after 3
+ *   automatic retries have failed. Can return a Promise that, if resolved, will reset the
+ *   retry counter and attempt 3 more automatic retries. Context contains { phase, blockNum,
+ *   attempt } for block uploads or { phase, attempt } for other operations.
  * @param {AbortSignal} [options.signal] - AbortSignal for cancellation. Use AbortController to cancel.
  * @returns {Promise<Object>} - Resolves with the full REST response. Rejects with AbortError if cancelled.
  *
@@ -49,18 +61,16 @@ const { env, utils, awsReq, readChunkFromStream, readFileSlice } = require('./up
  * });
  *
  * @example
- * // Upload with progress and error handling
+ * // Upload with progress - transient failures are automatically retried up to 3 times
  * const result = await uploadFile('Misc/Debug:testUpload', buffer, 'POST', {
  *   filename: 'large-file.bin'
  * }, null, {
  *   onProgress: (progress) => console.log(`${Math.round(progress * 100)}%`),
  *   onError: async (error, ctx) => {
- *     console.log(`Error in ${ctx.phase}, attempt ${ctx.attempt}:`, error.message);
- *     if (ctx.attempt < 3) {
- *       await new Promise(r => setTimeout(r, 1000)); // Wait 1s before retry
- *       return; // Resolve to trigger retry
- *     }
- *     throw error; // Give up after 3 attempts
+ *     // Called only after 3 automatic retries have failed
+ *     console.log(`Error in ${ctx.phase} after ${ctx.attempt} attempts:`, error.message);
+ *     // Resolve to reset counter and try 3 more times, or throw to give up
+ *     throw error;
  *   }
  * });
  *
@@ -338,9 +348,15 @@ async function doPutUpload(file, uploadInfo, context, options) {
         } catch (error) {
             // Check if aborted during completion
             checkAbort();
+            // Auto-retry up to 3 times before triggering onError
+            if (attempt < 3) {
+                await retryDelay(attempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'complete', attempt });
-                // If onError resolves, retry
+                // If onError resolves, reset attempt counter and retry
+                attempt = 0;
                 continue;
             }
             throw error;
@@ -388,8 +404,15 @@ async function uploadPutBlockWithDataAndRetry(uploadInfo, blockNum, startByte, d
             if (error.name === 'AbortError') {
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (attempt < 3) {
+                await retryDelay(attempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
+                // If onError resolves, reset attempt counter and retry
+                attempt = 0;
                 continue;
             }
             throw error;
@@ -412,9 +435,15 @@ async function uploadPutBlockWithRetry(file, uploadInfo, blockNum, blockSize, on
             if (error.name === 'AbortError') {
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (attempt < 3) {
+                await retryDelay(attempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
-                // If onError resolves, retry
+                // If onError resolves, reset attempt counter and retry
+                attempt = 0;
                 continue;
             }
             throw error;
@@ -526,8 +555,15 @@ async function doAwsUpload(file, uploadInfo, context, options) {
             if (error.name === 'AbortError') {
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (initAttempt < 3) {
+                await retryDelay(initAttempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'init', attempt: initAttempt });
+                // If onError resolves, reset attempt counter and retry
+                initAttempt = 0;
                 continue;
             }
             throw error;
@@ -636,8 +672,15 @@ async function doAwsUpload(file, uploadInfo, context, options) {
                 await abortMultipartUpload(uploadId);
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (completeAttempt < 3) {
+                await retryDelay(completeAttempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'complete', attempt: completeAttempt });
+                // If onError resolves, reset attempt counter and retry
+                completeAttempt = 0;
                 continue;
             }
             throw error;
@@ -662,8 +705,15 @@ async function doAwsUpload(file, uploadInfo, context, options) {
         } catch (error) {
             // Check if aborted during completion
             checkAbort();
+            // Auto-retry up to 3 times before triggering onError
+            if (handleAttempt < 3) {
+                await retryDelay(handleAttempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'handleComplete', attempt: handleAttempt });
+                // If onError resolves, reset attempt counter and retry
+                handleAttempt = 0;
                 continue;
             }
             throw error;
@@ -703,8 +753,15 @@ async function uploadAwsBlockWithDataAndRetry(uploadInfo, uploadId, blockNum, da
             if (error.name === 'AbortError') {
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (attempt < 3) {
+                await retryDelay(attempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
+                // If onError resolves, reset attempt counter and retry
+                attempt = 0;
                 continue;
             }
             throw error;
@@ -727,8 +784,15 @@ async function uploadAwsBlockWithRetry(file, uploadInfo, uploadId, blockNum, blo
             if (error.name === 'AbortError') {
                 throw error;
             }
+            // Auto-retry up to 3 times before triggering onError
+            if (attempt < 3) {
+                await retryDelay(attempt);
+                continue;
+            }
             if (onError) {
                 await onError(error, { phase: 'upload', blockNum, attempt });
+                // If onError resolves, reset attempt counter and retry
+                attempt = 0;
                 continue;
             }
             throw error;
