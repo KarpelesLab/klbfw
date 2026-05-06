@@ -13,6 +13,7 @@ const uploadMany = require('./upload-many');
 const uploadLegacy = require('./upload-legacy');
 const util = require('./util');
 const cookies = require('./cookies');
+const auth = require('./auth');
 
 // Framework wrapper exports
 module.exports.GET = internalFW.GET; // Use the function directly
@@ -51,6 +52,11 @@ module.exports.restSSE = rest.restSSE;
 module.exports.upload = uploadLegacy.upload;
 module.exports.uploadFile = upload.uploadFile;
 module.exports.uploadManyFiles = uploadMany.uploadManyFiles;
+
+// Auth provider exports — see auth-node.js for the Node-only Bearer provider.
+module.exports.setAuth = auth.setAuth;
+module.exports.getAuth = auth.getAuth;
+module.exports.sessionAuth = auth.sessionAuth;
 
 // Utility exports
 module.exports.getI18N = util.getI18N;

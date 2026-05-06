@@ -7,6 +7,7 @@
  */
 
 const fwWrapper = require('./fw-wrapper');
+const auth = require('./auth');
 
 /**
  * Pads a number with leading zeros
@@ -122,68 +123,12 @@ const checkSupport = () => {
 };
 
 /**
- * Checks if token needs refresh and refreshes if necessary
+ * Checks if token needs refresh and refreshes if necessary.
+ * Delegates to the active auth provider's `refreshIfNeeded` so Node-side
+ * Bearer flows can plug in their own renewal logic.
  * @returns {Promise<void>} Resolves when check/refresh is complete
  */
-const checkAndRefreshToken = () => {
-    const tokenExp = fwWrapper.getTokenExp();
-
-    // If token_exp is not defined, no refresh needed
-    if (tokenExp === undefined) {
-        return Promise.resolve();
-    }
-
-    const now = Date.now();
-    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
-
-    // Check if token expires within 5 minutes
-    if (tokenExp - now <= fiveMinutes) {
-        // Need to refresh token
-        const callUrl = buildRestUrl('_special/token.json', true);
-        const headers = {};
-
-        if (fwWrapper.getToken() !== '') {
-            headers['Authorization'] = 'Session ' + fwWrapper.getToken();
-        }
-
-        return fetch(callUrl, {
-            method: 'GET',
-            credentials: 'include',
-            headers: headers
-        })
-        .then(response => {
-            if (!response.ok) {
-                // API returned an error, give up by setting token_exp to undefined
-                fwWrapper.setToken(fwWrapper.getToken(), undefined);
-                return;
-            }
-
-            const contentType = response.headers.get('content-type');
-            if (!contentType || contentType.indexOf('application/json') === -1) {
-                // Not JSON response, give up
-                fwWrapper.setToken(fwWrapper.getToken(), undefined);
-                return;
-            }
-
-            return response.json();
-        })
-        .then(json => {
-            if (json && json.token && json.token_exp) {
-                // Update token and token_exp
-                fwWrapper.setToken(json.token, json.token_exp);
-            } else {
-                // Invalid response, give up
-                fwWrapper.setToken(fwWrapper.getToken(), undefined);
-            }
-        })
-        .catch(() => {
-            // Error occurred, give up by setting token_exp to undefined
-            fwWrapper.setToken(fwWrapper.getToken(), undefined);
-        });
-    }
-
-    return Promise.resolve();
-};
+const checkAndRefreshToken = () => auth.getAuth().refreshIfNeeded();
 
 /**
  * Makes an internal REST API call
@@ -206,56 +151,30 @@ const internalRest = (name, verb, params, context) => {
     return checkAndRefreshToken().then(() => {
         const callUrl = buildRestUrl(name, true, context);
         const headers = {};
+        const fetchOptions = { method: verb, headers: headers };
 
-        if (fwWrapper.getToken() !== '') {
-            headers['Authorization'] = 'Session ' + fwWrapper.getToken();
-        }
+        // Active auth provider sets Authorization header and credentials mode.
+        auth.getAuth().applyToRequest(headers, fetchOptions);
 
         // Handle GET requests
         if (verb === "GET") {
             if (params) {
-                // Check if params is a JSON string, or if it needs encoding
-                if (typeof params === "string") {
-                    return fetch(callUrl + "&_=" + encodeURIComponent(params), {
-                        method: verb,
-                        credentials: 'include',
-                        headers: headers
-                    });
-                } else {
-                    return fetch(callUrl + "&_=" + encodeURIComponent(JSON.stringify(params)), {
-                        method: verb,
-                        credentials: 'include',
-                        headers: headers
-                    });
-                }
+                const encoded = typeof params === "string" ? params : JSON.stringify(params);
+                return fetch(callUrl + "&_=" + encodeURIComponent(encoded), fetchOptions);
             }
-
-            return fetch(callUrl, {
-                method: verb,
-                credentials: 'include',
-                headers: headers
-            });
+            return fetch(callUrl, fetchOptions);
         }
 
         // Handle FormData
         if (typeof FormData !== "undefined" && (params instanceof FormData)) {
-            return fetch(callUrl, {
-                method: verb,
-                credentials: 'include',
-                body: params,
-                headers: headers
-            });
+            fetchOptions.body = params;
+            return fetch(callUrl, fetchOptions);
         }
 
         // Handle JSON requests
         headers['Content-Type'] = 'application/json; charset=utf-8';
-
-        return fetch(callUrl, {
-            method: verb,
-            credentials: 'include',
-            body: JSON.stringify(params),
-            headers: headers
-        });
+        fetchOptions.body = JSON.stringify(params);
+        return fetch(callUrl, fetchOptions);
     });
 };
 

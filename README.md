@@ -167,6 +167,43 @@ The upload module provides methods to manage active uploads:
 - `upload.retryItem(uploadId)`: Retry a failed upload
 - `upload.deleteItem(uploadId)`: Remove an upload from the queue or failed list
 
+## Authentication
+
+Browser apps don't need to do anything — `rest()`, `restSSE()`, and `uploadFile()` send the FW session token as `Authorization: Session <token>` and rely on `credentials: 'include'` for the session cookie. This is the default `sessionAuth` provider.
+
+Node.js apps cannot use session cookies. They opt in to OAuth2 Bearer auth from the separate `auth-node` entry point, which is intentionally not part of the main bundle (so browser bundlers never pull in `fs`/`https`/`os`).
+
+```javascript
+const klbfw = require('@karpeleslab/klbfw');
+const { AuthInfo, bearerAuth } = require('@karpeleslab/klbfw/auth-node');
+
+const info = new AuthInfo();
+await info.init();
+try {
+  await info.load();
+} catch (_) {
+  await info.login();   // Prints a URL the user has to open
+  await info.save();
+}
+
+klbfw.setAuth(bearerAuth(info));
+
+// rest()/uploadFile()/restSSE() now send Bearer tokens.
+// Expired access_tokens are renewed transparently via the refresh_token,
+// the refreshed token is written back to disk, and the failed call is
+// retried once.
+```
+
+### setAuth(provider) / getAuth() / sessionAuth
+
+`setAuth(provider)` swaps the active auth provider for all subsequent `rest()`, `restSSE()`, and `uploadFile()` calls. Pass `null` to restore the default `sessionAuth`.
+
+A provider is an object with three methods:
+
+- `applyToRequest(headers, fetchOptions)` — set Authorization header, credentials mode, etc.
+- `refreshIfNeeded()` — return a Promise that resolves once the token is fresh.
+- `handleExpiredError(error)` — return `Promise<true>` if the provider successfully refreshed and the call should be retried once.
+
 ## Query Parameter Methods
 
 ### GET

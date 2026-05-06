@@ -7,6 +7,7 @@
 
 const internal = require('./internal');
 const fwWrapper = require('./fw-wrapper');
+const auth = require('./auth');
 
 /**
  * Handles platform-specific API calls
@@ -80,15 +81,15 @@ const rest = (name, verb, params, context) => {
         return Promise.reject(new Error('Environment not supported'));
     }
 
-    return new Promise((resolve, reject) => {
+    const tryOnce = () => new Promise((resolve, reject) => {
         const handleSuccess = data => {
             internal.responseParse(data, resolve, reject);
         };
-        
+
         const handleError = data => {
             reject(data);
         };
-        
+
         const handleException = error => {
             console.error(error);
             // TODO: Add proper error logging
@@ -98,6 +99,13 @@ const rest = (name, verb, params, context) => {
             .then(handleSuccess, handleError)
             .catch(handleException);
     });
+
+    return tryOnce().catch(err =>
+        Promise.resolve(auth.getAuth().handleExpiredError(err)).then(retry => {
+            if (retry) return tryOnce();
+            throw err;
+        })
+    );
 };
 
 /**
@@ -300,18 +308,15 @@ const restSSE = (name, method, params, context) => {
         'Accept': 'text/event-stream, application/json'
     };
 
-    const token = fwWrapper.getToken();
-    if (token && token !== '') {
-        headers['Authorization'] = 'Session ' + token;
-    }
-
     // Build fetch options based on method
     const fetchOptions = {
         method: method,
-        credentials: 'include',
         headers: headers,
         signal: abortController.signal
     };
+
+    // Active auth provider sets Authorization header and credentials mode.
+    auth.getAuth().applyToRequest(headers, fetchOptions);
 
     if (method === 'GET') {
         // For GET requests, add params to URL

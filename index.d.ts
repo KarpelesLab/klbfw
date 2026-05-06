@@ -317,6 +317,41 @@ declare function uploadManyFiles(
   options?: UploadManyFilesOptions
 ): Promise<any[]>;
 
+// Auth provider types
+
+/**
+ * Pluggable auth provider interface used by rest(), restSSE(), and uploadFile().
+ *
+ * The default `sessionAuth` uses browser session cookies + FW.token. Node
+ * applications should require '@karpeleslab/klbfw/auth-node' and call
+ * `setAuth(bearerAuth(authInfo))` once at startup to switch to OAuth2 Bearer.
+ */
+interface AuthProvider {
+  /** Optional human-readable name (e.g. 'session', 'bearer'). */
+  name?: string;
+  /**
+   * Mutate `headers` and `fetchOptions` to carry credentials. The default
+   * provider sets `Authorization: Session <token>` and credentials: 'include';
+   * a Bearer provider sets `Authorization: Bearer <access_token>` only.
+   */
+  applyToRequest(headers: Record<string, string>, fetchOptions: Record<string, any>): void;
+  /** Resolves once the credential is fresh enough to use. */
+  refreshIfNeeded(): Promise<void>;
+  /**
+   * Called when a request rejects with an API error. Return true if the
+   * provider successfully refreshed the credential and the caller should
+   * retry the request once.
+   */
+  handleExpiredError(error: any): Promise<boolean> | boolean;
+}
+
+/** Replace the active auth provider. Pass null/undefined to restore the default. */
+declare function setAuth(provider: AuthProvider | null | undefined): void;
+/** Get the active auth provider. */
+declare function getAuth(): AuthProvider;
+/** Default auth provider — browser session cookie + FW.token. */
+declare const sessionAuth: AuthProvider;
+
 // Utility types
 declare function getI18N(key: string, args?: Record<string, any>): string;
 declare function trimPrefix(path: string): string;
@@ -351,6 +386,10 @@ export {
   upload,
   uploadFile,
   uploadManyFiles,
+  setAuth,
+  getAuth,
+  sessionAuth,
+  AuthProvider,
   getI18N,
   trimPrefix,
   Context,
